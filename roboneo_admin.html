@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roboneo — Admin Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161e;--bg3:#1a1e2a;--bg4:#1f2435;
+  --border:#252938;--border2:#2e3347;
+  --text:#e2e6f3;--text2:#8b91ad;--text3:#454e6b;
+  --purple:#7b68ee;--purple2:#a89bf5;--purple-bg:#1c1a3a;
+  --green:#3ddc84;--green-bg:#0d2a1a;
+  --amber:#f5a623;--amber-bg:#2a1d08;
+  --red:#e05252;--red-bg:#2a0f0f;
+  --mono:'IBM Plex Mono',monospace;
+  --sans:'IBM Plex Sans',sans-serif;
+}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;line-height:1.5}
+
+/* LAYOUT */
+.layout{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:210px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.main{flex:1;overflow-y:auto;background:var(--bg)}
+
+/* SIDEBAR */
+.logo{padding:20px 16px 16px;border-bottom:1px solid var(--border)}
+.logo-mark{display:flex;align-items:center;gap:8px}
+.logo-icon{width:28px;height:28px;background:var(--purple-bg);border:1px solid var(--purple);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px}
+.logo-text{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text);letter-spacing:.5px}
+.logo-ver{font-size:10px;color:var(--text3);margin-top:1px;font-family:var(--mono)}
+nav{padding:10px 8px;flex:1}
+.nav-section{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:.8px;padding:4px 8px 4px;margin-top:8px;margin-bottom:2px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 8px;border-radius:6px;cursor:pointer;color:var(--text2);font-size:12px;transition:all .12s;margin-bottom:1px;border:none;background:none;width:100%;text-align:left;font-family:var(--sans)}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:var(--purple-bg);color:var(--purple2);border:none}
+.nav-icon{font-size:15px;width:16px;text-align:center}
+.sidebar-foot{padding:12px 16px;border-top:1px solid var(--border)}
+.bot-status{display:flex;align-items:center;gap:7px}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.status-text{font-size:11px;color:var(--text2);font-family:var(--mono)}
+
+/* PAGE */
+.page{display:none;padding:24px 28px;animation:fadein .15s ease}
+.page.on{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.phead{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px}
+.phead-left h2{font-size:18px;font-weight:600;color:var(--text)}
+.phead-left p{font-size:12px;color:var(--text3);margin-top:3px;font-family:var(--mono)}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:22px}
+.stat{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
+.stat-label{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:.5px;margin-bottom:6px}
+.stat-val{font-size:26px;font-weight:600;color:var(--text);font-family:var(--mono)}
+.stat-note{font-size:10px;color:var(--text3);margin-top:3px}
+
+/* CARD */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px}
+.card-pad{padding:18px 20px}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;table-layout:fixed}
+.tbl th{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:.5px;padding:10px 14px;text-align:left;border-bottom:1px solid var(--border);font-weight:500;background:var(--bg3)}
+.tbl td{padding:11px 14px;font-size:12px;color:var(--text);border-bottom:1px solid var(--border);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr:hover td{background:var(--bg3)}
+.pname{font-weight:500;font-size:13px;margin-bottom:2px}
+.pmsg-pre{font-size:10px;color:var(--text3);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;font-family:var(--mono)}
+.badge-g{background:var(--green-bg);color:var(--green);border:1px solid #1a4a2a}
+.badge-a{background:var(--amber-bg);color:var(--amber);border:1px solid #3a2910}
+.badge-r{background:var(--red-bg);color:var(--red);border:1px solid #3a1515}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--text2);font-size:12px;font-weight:500;cursor:pointer;transition:all .12s;font-family:var(--sans)}
+.btn:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
+.btn-primary{background:var(--purple);color:#fff;border-color:var(--purple)}
+.btn-primary:hover{background:var(--purple2);border-color:var(--purple2);color:#fff}
+.btn-danger{color:var(--red);border-color:#3a1515}
+.btn-danger:hover{background:var(--red-bg);color:var(--red)}
+.btn-sm{padding:5px 10px;font-size:11px}
+.icon-btn{width:30px;height:30px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:14px;transition:all .12s}
+.icon-btn:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
+.icon-btn.del:hover{background:var(--red-bg);color:var(--red);border-color:#3a1515}
+.acts{display:flex;gap:5px;align-items:center}
+
+/* FORMS */
+.flabel{display:block;font-size:11px;color:var(--text2);font-family:var(--mono);margin-bottom:5px;font-weight:500}
+.flabel span{color:var(--text3);font-weight:400}
+.finput{width:100%;padding:8px 11px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:13px;outline:none;font-family:var(--sans);transition:border .12s}
+.finput:focus{border-color:var(--purple)}
+textarea.finput{resize:vertical;font-family:var(--mono);font-size:12px;line-height:1.7}
+.fg{margin-bottom:14px}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fhint{font-size:10px;color:var(--text3);margin-top:4px;font-family:var(--mono)}
+
+/* PREVIEW BOX */
+.pv-box{background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:10px 13px;font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.8;min-height:50px;font-family:var(--mono)}
+.pv-label{font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:5px;letter-spacing:.3px}
+
+/* ACC LIST */
+.acc-list{background:var(--bg3);border:1px solid var(--border);border-radius:7px;max-height:110px;overflow-y:auto;padding:4px}
+.acc-row{display:flex;align-items:center;justify-content:space-between;padding:4px 7px;border-radius:5px;font-size:11px;color:var(--text2);font-family:var(--mono)}
+.acc-row:hover{background:var(--bg4)}
+.acc-empty{text-align:center;padding:16px;font-size:11px;color:var(--text3);font-family:var(--mono)}
+
+/* MSG CARD */
+.msg-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+.msg-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.msg-prod-name{font-weight:600;font-size:13px;color:var(--text)}
+.msg-prod-meta{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px}
+
+/* SECTION LABEL */
+.section-lbl{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:.6px;margin-bottom:8px;margin-top:16px}
+.divider{height:1px;background:var(--border);margin:16px 0}
+
+/* MODAL */
+.modal-wrap{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);align-items:center;justify-content:center;z-index:100}
+.modal-wrap.show{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:12px;width:500px;max-width:96vw;max-height:90vh;overflow-y:auto}
+.modal-head{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-head h3{font-size:15px;font-weight:600;color:var(--text)}
+.modal-body{padding:18px 20px}
+.modal-foot{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+
+/* TOAST */
+.toast-wrap{position:fixed;bottom:18px;right:18px;display:flex;flex-direction:column;gap:7px;z-index:200}
+.toast{padding:9px 14px;border-radius:8px;font-size:12px;font-weight:500;font-family:var(--mono);border:1px solid;animation:slide-up .2s ease}
+.toast-ok{background:var(--green-bg);color:var(--green);border-color:#1a4a2a}
+.toast-err{background:var(--red-bg);color:var(--red);border-color:#3a1515}
+@keyframes slide-up{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+.empty{text-align:center;padding:36px;color:var(--text3);font-size:12px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-mark">
+        <div class="logo-icon">🥕</div>
+        <div>
+          <div class="logo-text">ROBONEO</div>
+          <div class="logo-ver">admin v1.0</div>
+        </div>
+      </div>
+    </div>
+
+    <nav>
+      <div class="nav-section">MENU</div>
+      <button class="nav-item active" data-page="dashboard">
+        <span class="nav-icon">⊞</span> Tổng quan
+      </button>
+      <button class="nav-item" data-page="products">
+        <span class="nav-icon">◈</span> Sản phẩm
+      </button>
+      <button class="nav-item" data-page="messages">
+        <span class="nav-icon">◎</span> Tin nhắn
+      </button>
+      <div class="nav-section">HỆ THỐNG</div>
+      <button class="nav-item" data-page="config">
+        <span class="nav-icon">⚙</span> Cấu hình
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="bot-status">
+        <div class="status-dot"></div>
+        <div class="status-text">bot online</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- DASHBOARD -->
+    <div id="pg-dashboard" class="page on">
+      <div class="phead">
+        <div class="phead-left">
+          <h2>Tổng quan</h2>
+          <p>// Quản lý bot bán tài khoản Telegram</p>
+        </div>
+        <button class="btn btn-primary" onclick="openAdd()">+ Thêm sản phẩm</button>
+      </div>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">TỔNG SẢN PHẨM</div>
+          <div class="stat-val" id="s-total">3</div>
+          <div class="stat-note">loại tài khoản</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">TỔNG KHO</div>
+          <div class="stat-val" id="s-stock">19</div>
+          <div class="stat-note">tài khoản sẵn có</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">HẾT / SẮP HẾT</div>
+          <div class="stat-val" id="s-low" style="color:var(--amber)">0</div>
+          <div class="stat-note">cần bổ sung</div>
+        </div>
+      </div>
+      <div class="card">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:36%">SẢN PHẨM</th>
+              <th style="width:13%">GIÁ</th>
+              <th style="width:10%">KHO</th>
+              <th style="width:17%">TRẠNG THÁI</th>
+              <th style="width:24%">THAO TÁC</th>
+            </tr>
+          </thead>
+          <tbody id="dash-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PRODUCTS -->
+    <div id="pg-products" class="page">
+      <div class="phead">
+        <div class="phead-left">
+          <h2>Sản phẩm</h2>
+          <p>// Thêm, sửa, xóa và quản lý kho</p>
+        </div>
+        <button class="btn btn-primary" onclick="openAdd()">+ Thêm sản phẩm</button>
+      </div>
+      <div class="card">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:32%">SẢN PHẨM</th>
+              <th style="width:11%">GIÁ</th>
+              <th style="width:9%">KHO</th>
+              <th style="width:12%">ACC TRONG KHO</th>
+              <th style="width:14%">TRẠNG THÁI</th>
+              <th style="width:22%">THAO TÁC</th>
+            </tr>
+          </thead>
+          <tbody id="prod-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- MESSAGES -->
+    <div id="pg-messages" class="page">
+      <div class="phead">
+        <div class="phead-left">
+          <h2>Tin nhắn mua hàng</h2>
+          <p>// Chỉnh nội dung bot gửi khi người dùng chọn sản phẩm</p>
+        </div>
+        <button class="btn btn-primary" onclick="saveMsgs()">💾 Lưu tất cả</button>
+      </div>
+      <div id="msg-list"></div>
+    </div>
+
+    <!-- CONFIG -->
+    <div id="pg-config" class="page">
+      <div class="phead">
+        <div class="phead-left">
+          <h2>Cấu hình bot</h2>
+          <p>// Token, admin ID và xuất file Python</p>
+        </div>
+        <button class="btn btn-primary" onclick="exportBot()">⬇ Xuất file bot.py</button>
+      </div>
+      <div class="card card-pad">
+        <div class="fg">
+          <label class="flabel">BOT TOKEN <span>từ @BotFather</span></label>
+          <input class="finput" id="cfg-token" placeholder="1234567890:ABCdefGHIjklMNO..." oninput="updateCfgPv()"/>
+        </div>
+        <div class="frow">
+          <div class="fg">
+            <label class="flabel">ADMIN TELEGRAM ID</label>
+            <input class="finput" id="cfg-admin" placeholder="123456789" type="number" oninput="updateCfgPv()"/>
+          </div>
+          <div class="fg">
+            <label class="flabel">USERNAME HỖ TRỢ</label>
+            <input class="finput" id="cfg-support" placeholder="@your_username" oninput="updateCfgPv()"/>
+          </div>
+        </div>
+        <div class="fg">
+          <label class="flabel">TIN NHẮN WELCOME <span>(/start) — hỗ trợ HTML Telegram</span></label>
+          <textarea class="finput" id="cfg-welcome" rows="5" oninput="updateCfgPv()"></textarea>
+          <div class="fhint">// Biến: {name} = tên người dùng</div>
+        </div>
+        <div class="divider"></div>
+        <div class="pv-label">// PREVIEW CONFIG</div>
+        <div class="pv-box" id="cfg-preview"></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODAL THÊM/SỬA SẢN PHẨM -->
+<div class="modal-wrap" id="modal-prod">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modal-title">Thêm sản phẩm mới</h3>
+      <button class="icon-btn" onclick="closeModal()" aria-label="Đóng">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id"/>
+      <div class="fg">
+        <label class="flabel">TÊN SẢN PHẨM</label>
+        <input class="finput" id="f-name" placeholder="Roboneo tài khoản 120-140🥕" oninput="updatePv()"/>
+      </div>
+      <div class="frow">
+        <div class="fg">
+          <label class="flabel">GIÁ (VNĐ)</label>
+          <input class="finput" id="f-price" type="number" placeholder="90000"/>
+        </div>
+        <div class="fg">
+          <label class="flabel">GIÁ HIỂN THỊ</label>
+          <input class="finput" id="f-pdisplay" placeholder="90k" oninput="updatePv()"/>
+        </div>
+      </div>
+      <div class="fg">
+        <label class="flabel">TIN NHẮN KHI ẤN MUA <span>— hỗ trợ HTML Telegram</span></label>
+        <textarea class="finput" id="f-msg" rows="6" oninput="updatePv()"></textarea>
+        <div class="fhint">// Biến: {name} = tên SP · {price} = giá hiển thị · {stock} = kho còn lại</div>
+      </div>
+      <div class="fg">
+        <div class="pv-label">// PREVIEW TIN NHẮN (sau khi thay biến)</div>
+        <div class="pv-box" id="f-preview"></div>
+      </div>
+      <div class="divider"></div>
+      <div class="section-lbl">THÊM TÀI KHOẢN VÀO KHO</div>
+      <div class="fg">
+        <label class="flabel">NHẬP TÀI KHOẢN <span>mỗi dòng 1 acc — format: username|password</span></label>
+        <textarea class="finput" id="f-accs" rows="4" placeholder="user1|pass1&#10;user2|pass2&#10;user3|pass3"></textarea>
+      </div>
+      <div class="fg">
+        <label class="flabel">TÀI KHOẢN HIỆN CÓ TRONG KHO</label>
+        <div class="acc-list" id="f-acc-list"><div class="acc-empty">// Chưa có tài khoản</div></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="saveProduct()">Lưu sản phẩm</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL XÓA -->
+<div class="modal-wrap" id="modal-del">
+  <div class="modal" style="width:380px">
+    <div class="modal-head">
+      <h3 style="color:var(--red)">Xóa sản phẩm</h3>
+      <button class="icon-btn" onclick="closeDel()" aria-label="Đóng">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text2);line-height:1.7">Bạn chắc muốn xóa <strong id="del-name" style="color:var(--text)"></strong>?<br>Hành động này sẽ xóa toàn bộ tài khoản trong kho và không thể hoàn tác.</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeDel()">Hủy</button>
+      <button class="btn btn-danger" onclick="confirmDel()">Xóa</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+// =================== DATA ===================
+let DB = JSON.parse(localStorage.getItem('rbn_db') || 'null') || {
+  products: [
+    {
+      id: 'sp1',
+      name: 'Roboneo tài khoản 120-140🥕',
+      price: 90000, pd: '90k', stock: 11, accounts: [],
+      msg: '🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):'
+    },
+    {
+      id: 'sp2',
+      name: 'Roboneo tài khoản 170-190🥕',
+      price: 150000, pd: '150k', stock: 5, accounts: [],
+      msg: '🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):'
+    },
+    {
+      id: 'sp3',
+      name: 'Roboneo tài khoản 220-240🥕',
+      price: 300000, pd: '300k', stock: 3, accounts: [],
+      msg: '🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):'
+    }
+  ],
+  config: {
+    token: '', admin: '', support: '',
+    welcome: '🎉 Chào mừng <b>{name}</b> đến với cửa hàng!\n\n📌 <b>Hướng dẫn nhanh:</b>\n1. Nhấn nút 🛒 Mua hàng\n2. Chọn sản phẩm và nhập số lượng\n3. Thanh toán QR — bot tự xử lý\n\n🎯 Vui lòng chọn menu:'
+  }
+};
+
+function save() { localStorage.setItem('rbn_db', JSON.stringify(DB)); }
+
+// =================== HELPERS ===================
+function interpolate(p, msg) {
+  return (msg || '').replace(/{name}/g, p.name).replace(/{price}/g, p.pd).replace(/{stock}/g, p.stock);
+}
+function statusBadge(p) {
+  if (p.stock === 0) return '<span class="badge badge-r">● Hết hàng</span>';
+  if (p.stock < 3)  return '<span class="badge badge-a">● Sắp hết</span>';
+  return '<span class="badge badge-g">● Còn hàng</span>';
+}
+function toast(msg, type = 'ok') {
+  const w = document.getElementById('toast-wrap');
+  const d = document.createElement('div');
+  d.className = `toast toast-${type}`;
+  d.textContent = msg;
+  w.appendChild(d);
+  setTimeout(() => d.remove(), 2600);
+}
+
+// =================== RENDER ===================
+function renderAll() {
+  renderStats();
+  renderDash();
+  renderProd();
+}
+
+function renderStats() {
+  const ps = DB.products;
+  document.getElementById('s-total').textContent = ps.length;
+  document.getElementById('s-stock').textContent = ps.reduce((a, p) => a + p.stock, 0);
+  document.getElementById('s-low').textContent = ps.filter(p => p.stock < 3).length;
+}
+
+function renderDash() {
+  const tb = document.getElementById('dash-tbody');
+  if (!DB.products.length) { tb.innerHTML = '<tr><td colspan="5"><div class="empty">// Chưa có sản phẩm nào</div></td></tr>'; return; }
+  tb.innerHTML = DB.products.map(p => `
+    <tr>
+      <td>
+        <div class="pname">${p.name}</div>
+        <div class="pmsg-pre">${(p.msg || '').replace(/<[^>]+>/g, '')}</div>
+      </td>
+      <td style="font-family:var(--mono);font-weight:600;color:var(--purple2)">${p.pd}</td>
+      <td style="font-family:var(--mono);font-weight:600">${p.stock}</td>
+      <td>${statusBadge(p)}</td>
+      <td>
+        <div class="acts">
+          <button class="icon-btn" title="Chỉnh sửa" onclick="openEdit('${p.id}')">✎</button>
+          <button class="icon-btn del" title="Xóa" onclick="openDel('${p.id}')">✕</button>
+          <button class="btn btn-sm" onclick="openEdit('${p.id}')">+ Thêm acc</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function renderProd() {
+  const tb = document.getElementById('prod-tbody');
+  if (!DB.products.length) { tb.innerHTML = '<tr><td colspan="6"><div class="empty">// Chưa có sản phẩm nào</div></td></tr>'; return; }
+  tb.innerHTML = DB.products.map(p => `
+    <tr>
+      <td><div class="pname">${p.name}</div></td>
+      <td style="font-family:var(--mono);font-weight:600;color:var(--purple2)">${p.pd}</td>
+      <td style="font-family:var(--mono);font-weight:600">${p.stock}</td>
+      <td style="font-family:var(--mono);color:var(--text3)">${p.accounts.length} acc</td>
+      <td>${statusBadge(p)}</td>
+      <td>
+        <div class="acts">
+          <button class="icon-btn" title="Chỉnh sửa" onclick="openEdit('${p.id}')">✎</button>
+          <button class="icon-btn del" title="Xóa" onclick="openDel('${p.id}')">✕</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+// =================== MESSAGES PAGE ===================
+function renderMsgs() {
+  const c = document.getElementById('msg-list');
+  if (!DB.products.length) { c.innerHTML = '<div class="empty">// Chưa có sản phẩm nào</div>'; return; }
+  c.innerHTML = DB.products.map(p => `
+    <div class="msg-card">
+      <div class="msg-card-head">
+        <div>
+          <div class="msg-prod-name">${p.name}</div>
+          <div class="msg-prod-meta">${p.pd} · kho: ${p.stock} · id: ${p.id}</div>
+        </div>
+        ${statusBadge(p)}
+      </div>
+      <div class="fg">
+        <label class="flabel">NỘI DUNG TIN NHẮN KHI NGƯỜI DÙNG CHỌN SẢN PHẨM NÀY</label>
+        <textarea class="finput" id="msg-${p.id}" rows="6" oninput="livePv('${p.id}')">${p.msg || ''}</textarea>
+        <div class="fhint">// {name} · {price} · {stock} — hỗ trợ HTML Telegram</div>
+      </div>
+      <div>
+        <div class="pv-label">// PREVIEW (sau khi thay biến)</div>
+        <div class="pv-box" id="mpv-${p.id}">${interpolate(p, p.msg)}</div>
+      </div>
+    </div>`).join('');
+}
+
+function livePv(id) {
+  const p = DB.products.find(x => x.id === id);
+  if (!p) return;
+  const val = document.getElementById('msg-' + id).value;
+  document.getElementById('mpv-' + id).textContent = interpolate(p, val);
+}
+
+function saveMsgs() {
+  DB.products.forEach(p => {
+    const el = document.getElementById('msg-' + p.id);
+    if (el) p.msg = el.value;
+  });
+  save();
+  toast('✓ Đã lưu nội dung tin nhắn');
+}
+
+// =================== CONFIG PAGE ===================
+function renderCfg() {
+  const c = DB.config;
+  document.getElementById('cfg-token').value = c.token || '';
+  document.getElementById('cfg-admin').value = c.admin || '';
+  document.getElementById('cfg-support').value = c.support || '';
+  document.getElementById('cfg-welcome').value = c.welcome || '';
+  updateCfgPv();
+}
+
+function updateCfgPv() {
+  const t = document.getElementById('cfg-token').value || 'YOUR_BOT_TOKEN';
+  const a = document.getElementById('cfg-admin').value || '123456789';
+  const s = document.getElementById('cfg-support').value || '@admin';
+  document.getElementById('cfg-preview').textContent =
+`BOT_TOKEN = "${t}"
+ADMIN_ID  = ${a}
+SUPPORT   = "${s}"
+
+PRODUCTS  = ${DB.products.length} sản phẩm:
+${DB.products.map(p => `  [${p.id}] ${p.name}\n         → giá: ${p.pd} | kho: ${p.stock} acc`).join('\n')}`;
+}
+
+function saveCfg() {
+  DB.config.token = document.getElementById('cfg-token').value;
+  DB.config.admin = document.getElementById('cfg-admin').value;
+  DB.config.support = document.getElementById('cfg-support').value;
+  DB.config.welcome = document.getElementById('cfg-welcome').value;
+  save();
+}
+
+// =================== EXPORT BOT.PY ===================
+function exportBot() {
+  saveCfg();
+  const c = DB.config;
+  const prodsCode = DB.products.map(p =>
+    `    "${p.id}": {\n        "name": ${JSON.stringify(p.name)},\n        "price": ${p.price},\n        "pd": ${JSON.stringify(p.pd)},\n        "stock": ${p.stock},\n        "msg": ${JSON.stringify(p.msg || '')},\n        "accounts": ${JSON.stringify(p.accounts)}\n    }`
+  ).join(',\n');
+
+  const code = `"""
+Bot Telegram bán tài khoản Roboneo
+Xuất từ Admin Panel
+Cài đặt: pip install python-telegram-bot==20.7
+Chạy: python roboneo_bot.py
+"""
+
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, filters
+)
+
+# ==================== CẤU HÌNH ====================
+BOT_TOKEN = "${c.token || 'YOUR_BOT_TOKEN_HERE'}"
+ADMIN_ID  = ${c.admin || 0}
+SUPPORT   = "${c.support || '@admin'}"
+
+# ==================== SẢN PHẨM ====================
+PRODUCTS = {
+${prodsCode}
+}
+
+# ==================== WELCOME ====================
+WELCOME_MSG = ${JSON.stringify(c.welcome || '🎉 Chào {name}!')}
+
+# ==================== LOGGING ====================
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+# ==================== KEYBOARD ====================
+def menu_kb():
+    return ReplyKeyboardMarkup([
+        [KeyboardButton("🛒 Mua hàng")],
+        [KeyboardButton("👤 Hồ sơ"), KeyboardButton("📋 Lịch sử mua")],
+        [KeyboardButton("👛 Ví")],
+        [KeyboardButton("💬 Hỗ trợ")],
+        [KeyboardButton("🌐 Ngôn ngữ")],
+    ], resize_keyboard=True)
+
+# ==================== /start ====================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.effective_user.first_name
+    text = WELCOME_MSG.replace("{name}", name)
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=menu_kb())
+
+# ==================== HIỆN SẢN PHẨM ====================
+async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton(
+            f"{p['name']} | {p['pd']} | 📦 {p['stock']}",
+            callback_data=f"buy_{pid}"
+        )]
+        for pid, p in PRODUCTS.items()
+    ]
+    await update.message.reply_text(
+        "🛍️ <b>Danh sách sản phẩm:</b>\\n<i>(Tên | Giá | Số lượng kho)</i>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# ==================== CALLBACK ====================
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data.startswith("buy_"):
+        pid = data[4:]
+        p = PRODUCTS.get(pid)
+        if not p:
+            await query.edit_message_text("❌ Sản phẩm không tồn tại.")
+            return
+        if p["stock"] <= 0:
+            await query.edit_message_text("😔 Sản phẩm này đã hết hàng!")
+            return
+
+        context.user_data["pid"] = pid
+        context.user_data["wait_qty"] = True
+
+        msg = p["msg"]
+        msg = msg.replace("{name}", p["name"])
+        msg = msg.replace("{price}", p["pd"])
+        msg = msg.replace("{stock}", str(p["stock"]))
+
+        kb = [[InlineKeyboardButton("🔙 Quay lại", callback_data="back")]]
+        await query.edit_message_text(msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
+
+    elif data == "back":
+        keyboard = [
+            [InlineKeyboardButton(
+                f"{p['name']} | {p['pd']} | 📦 {p['stock']}",
+                callback_data=f"buy_{pid}"
+            )]
+            for pid, p in PRODUCTS.items()
+        ]
+        await query.edit_message_text(
+            "🛍️ <b>Danh sách sản phẩm:</b>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    elif data.startswith("confirm_"):
+        parts = data.split("_")
+        pid = parts[1]
+        qty = int(parts[2])
+        p = PRODUCTS.get(pid)
+        if not p or p["stock"] < qty:
+            await query.edit_message_text("❌ Không đủ hàng. Vui lòng thử lại.")
+            return
+
+        if p["accounts"]:
+            sent = []
+            for _ in range(qty):
+                if p["accounts"]:
+                    sent.append(p["accounts"].pop(0))
+            p["stock"] -= len(sent)
+            acc_text = "\\n".join(f"<code>{a}</code>" for a in sent)
+            await query.edit_message_text(
+                f"✅ <b>Thanh toán thành công!</b>\\n\\n"
+                f"📦 {p['name']} x{qty}\\n"
+                f"🔑 Tài khoản của bạn:\\n{acc_text}\\n\\n"
+                f"Cảm ơn bạn đã mua hàng! 🎉",
+                parse_mode="HTML"
+            )
+        else:
+            p["stock"] -= qty
+            await query.edit_message_text(
+                f"⏳ <b>Đơn hàng đã ghi nhận!</b>\\n\\n"
+                f"📦 {p['name']} x{qty}\\n"
+                f"Admin sẽ gửi tài khoản sớm nhất có thể.\\n"
+                f"Liên hệ: {SUPPORT}",
+                parse_mode="HTML"
+            )
+
+        await context.bot.send_message(
+            ADMIN_ID,
+            f"🛒 <b>Đơn hàng mới!</b>\\n"
+            f"👤 {query.from_user.full_name} (@{query.from_user.username}) — ID: {query.from_user.id}\\n"
+            f"📦 {p['name']} x{qty}\\n"
+            f"💰 {p['pd']} x{qty} = {p['price']*qty:,}đ",
+            parse_mode="HTML"
+        )
+
+# ==================== XỬ LÝ TEXT ====================
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+
+    if text == "🛒 Mua hàng":
+        await show_products(update, context)
+        return
+    if text == "👤 Hồ sơ":
+        user = update.effective_user
+        await update.message.reply_text(
+            f"👤 <b>Hồ sơ</b>\\n\\n"
+            f"🆔 ID: <code>{user.id}</code>\\n"
+            f"👋 Tên: {user.full_name}\\n"
+            f"📛 Username: @{user.username or 'Chưa đặt'}",
+            parse_mode="HTML"
+        )
+        return
+    if text == "💬 Hỗ trợ":
+        await update.message.reply_text(f"💬 Liên hệ admin: {SUPPORT}")
+        return
+    if text in ["📋 Lịch sử mua", "👛 Ví", "🌐 Ngôn ngữ"]:
+        await update.message.reply_text("⏳ Tính năng đang phát triển.")
+        return
+
+    # Xử lý nhập số lượng
+    if context.user_data.get("wait_qty"):
+        pid = context.user_data.get("pid")
+        p = PRODUCTS.get(pid)
+        if not p:
+            context.user_data["wait_qty"] = False
+            return
+
+        try:
+            qty = int(text.strip())
+        except ValueError:
+            await update.message.reply_text(
+                f"❌ Vui lòng nhập một số hợp lệ (1 - {p['stock']})"
+            )
+            return
+
+        if qty < 1 or qty > p["stock"]:
+            await update.message.reply_text(
+                f"❌ Số lượng phải từ 1 đến {p['stock']}"
+            )
+            return
+
+        context.user_data["wait_qty"] = False
+        total = p["price"] * qty
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Xác nhận thanh toán", callback_data=f"confirm_{pid}_{qty}")],
+            [InlineKeyboardButton("🔙 Hủy", callback_data="back")]
+        ])
+        await update.message.reply_text(
+            f"📋 <b>Xác nhận đơn hàng</b>\\n\\n"
+            f"📦 Sản phẩm: <b>{p['name']}</b>\\n"
+            f"🔢 Số lượng: <b>{qty}</b>\\n"
+            f"💰 Đơn giá: {p['pd']}\\n"
+            f"💵 Tổng cộng: <b>{total:,}đ</b>\\n\\n"
+            f"Bạn xác nhận thanh toán?",
+            parse_mode="HTML",
+            reply_markup=kb
+        )
+
+# ==================== LỆNH ADMIN ====================
+async def add_acc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Bạn không có quyền.")
+        return
+    if len(context.args) < 2:
+        await update.message.reply_text("/addacc <sp1|sp2|sp3> <user|pass>")
+        return
+    pid, acc = context.args[0], context.args[1]
+    if pid not in PRODUCTS:
+        await update.message.reply_text("❌ ID sản phẩm không hợp lệ.")
+        return
+    PRODUCTS[pid]["accounts"].append(acc)
+    PRODUCTS[pid]["stock"] += 1
+    await update.message.reply_text(
+        f"✅ Đã thêm vào <b>{PRODUCTS[pid]['name']}</b>\\n"
+        f"📦 Kho hiện tại: {PRODUCTS[pid]['stock']} tài khoản",
+        parse_mode="HTML"
+    )
+
+async def stock_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    text = "📊 <b>Tình trạng kho:</b>\\n\\n"
+    for p in PRODUCTS.values():
+        status = "✅" if p["stock"] > 3 else ("⚠️" if p["stock"] > 0 else "❌")
+        text += f"{status} {p['name']}\\n   💰 {p['pd']} | 📦 {p['stock']} tài khoản\\n\\n"
+    await update.message.reply_text(text, parse_mode="HTML")
+
+# ==================== MAIN ====================
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("addacc", add_acc))
+    app.add_handler(CommandHandler("stock", stock_cmd))
+    app.add_handler(CallbackQueryHandler(callback_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    logger.info("✅ Bot đang chạy...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    main()
+`;
+
+  const blob = new Blob([code], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'roboneo_bot.py';
+  a.click();
+  toast('✓ Đã xuất file roboneo_bot.py');
+}
+
+// =================== MODAL ===================
+let delId = null;
+
+function openAdd() {
+  document.getElementById('modal-title').textContent = 'Thêm sản phẩm mới';
+  document.getElementById('edit-id').value = '';
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-price').value = '';
+  document.getElementById('f-pdisplay').value = '';
+  const def = '🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):';
+  document.getElementById('f-msg').value = def;
+  document.getElementById('f-accs').value = '';
+  renderAccList([]);
+  updatePv();
+  document.getElementById('modal-prod').classList.add('show');
+}
+
+function openEdit(id) {
+  const p = DB.products.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('modal-title').textContent = 'Chỉnh sửa sản phẩm';
+  document.getElementById('edit-id').value = id;
+  document.getElementById('f-name').value = p.name;
+  document.getElementById('f-price').value = p.price;
+  document.getElementById('f-pdisplay').value = p.pd;
+  document.getElementById('f-msg').value = p.msg || '';
+  document.getElementById('f-accs').value = '';
+  renderAccList(p.accounts || []);
+  updatePv();
+  document.getElementById('modal-prod').classList.add('show');
+}
+
+function renderAccList(accs) {
+  const el = document.getElementById('f-acc-list');
+  if (!accs.length) { el.innerHTML = '<div class="acc-empty">// Chưa có tài khoản trong kho</div>'; return; }
+  el.innerHTML = accs.map((a, i) => `
+    <div class="acc-row">
+      <span>${a}</span>
+      <button onclick="removeAcc(${i})" style="border:none;background:none;cursor:pointer;color:var(--red);font-size:11px;font-family:var(--mono)">xóa</button>
+    </div>`).join('');
+}
+
+function removeAcc(i) {
+  const id = document.getElementById('edit-id').value;
+  const p = DB.products.find(x => x.id === id);
+  if (!p) return;
+  p.accounts.splice(i, 1);
+  p.stock = p.accounts.length;
+  save(); renderAccList(p.accounts); renderAll();
+}
+
+function updatePv() {
+  const name = document.getElementById('f-name').value || 'Tên sản phẩm';
+  const pd   = document.getElementById('f-pdisplay').value || '0k';
+  const stock = '11';
+  const msg  = document.getElementById('f-msg').value || '';
+  document.getElementById('f-preview').textContent =
+    msg.replace(/{name}/g, name).replace(/{price}/g, pd).replace(/{stock}/g, stock);
+}
+
+function closeModal() { document.getElementById('modal-prod').classList.remove('show'); }
+
+function saveProduct() {
+  const id      = document.getElementById('edit-id').value;
+  const name    = document.getElementById('f-name').value.trim();
+  const price   = parseInt(document.getElementById('f-price').value) || 0;
+  const pd      = document.getElementById('f-pdisplay').value.trim();
+  const msg     = document.getElementById('f-msg').value;
+  const raw     = document.getElementById('f-accs').value.trim();
+  const newAccs = raw ? raw.split('\n').map(s => s.trim()).filter(Boolean) : [];
+
+  if (!name || !pd) { toast('✗ Nhập đủ tên và giá hiển thị', 'err'); return; }
+
+  if (id) {
+    const p = DB.products.find(x => x.id === id);
+    if (p) {
+      p.name = name; p.price = price; p.pd = pd; p.msg = msg;
+      p.accounts = [...p.accounts, ...newAccs];
+      p.stock = p.accounts.length || p.stock;
+    }
+    toast('✓ Đã cập nhật sản phẩm');
+  } else {
+    DB.products.push({ id: 'sp' + Date.now(), name, price, pd, stock: newAccs.length, accounts: newAccs, msg });
+    toast('✓ Đã thêm sản phẩm mới');
+  }
+  save(); renderAll(); closeModal();
+}
+
+function openDel(id) {
+  delId = id;
+  const p = DB.products.find(x => x.id === id);
+  document.getElementById('del-name').textContent = p ? p.name : '';
+  document.getElementById('modal-del').classList.add('show');
+}
+function closeDel() { document.getElementById('modal-del').classList.remove('show'); }
+function confirmDel() {
+  DB.products = DB.products.filter(p => p.id !== delId);
+  delId = null;
+  save(); renderAll(); closeDel();
+  toast('✓ Đã xóa sản phẩm');
+}
+
+// =================== NAV ===================
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('on'));
+    btn.classList.add('active');
+    const pg = btn.dataset.page;
+    document.getElementById('pg-' + pg).classList.add('on');
+    if (pg === 'messages') renderMsgs();
+    if (pg === 'config')   renderCfg();
+  });
+});
+
+// Close modals on backdrop click
+document.getElementById('modal-prod').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+document.getElementById('modal-del').addEventListener('click',  e => { if (e.target === e.currentTarget) closeDel(); });
+
+// =================== INIT ===================
+renderAll();
+</script>
+</body>
+</html>
