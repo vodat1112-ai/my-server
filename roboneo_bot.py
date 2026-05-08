@@ -27,7 +27,7 @@ PAYOS_CHECKSUM   = "345a7f892bd9c7641a043d04442c81da2f37c789ddf4dc9cac43c8b46287
 PAYOS_API_URL    = "https://api-merchant.payos.vn"
 
 # URL Railway của bạn (cập nhật sau khi deploy)
-SERVER_URL = "my-server-production-37d7.up.railway.app"
+SERVER_URL = "https://my-server-production-37d7.up.railway.app"
 
 # ==================== DỮ LIỆU SẢN PHẨM ====================
 # Admin cập nhật kho bằng lệnh /addacc hoặc trang HTML
