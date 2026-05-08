@@ -572,28 +572,39 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         [InlineKeyboardButton("❌ Hủy đơn", callback_data=f"cancel_{order_code_int}")]
                     ])
 
+                    # Lưu chat_id trước khi xóa tin nhắn
+                    chat_id_now = query.message.chat_id
+
                     # Xóa tin nhắn "đang tạo link"
-                    await query.delete_message()
+                    try:
+                        await query.delete_message()
+                    except Exception:
+                        pass
 
                     # Gửi ảnh QR từ URL trực tiếp
+                    sent = None
                     if qr_url:
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(qr_url) as resp:
-                                if resp.status == 200:
-                                    img_bytes = await resp.read()
-                                    sent = await query.message.chat.send_photo(
-                                        photo=io.BytesIO(img_bytes),
-                                        caption=caption,
-                                        parse_mode="HTML",
-                                        reply_markup=kb
-                                    )
-                                else:
-                                    sent = await query.message.chat.send_message(
-                                        text=caption, parse_mode="HTML", reply_markup=kb
-                                    )
-                    else:
-                        sent = await query.message.chat.send_message(
-                            text=caption, parse_mode="HTML", reply_markup=kb
+                        try:
+                            async with aiohttp.ClientSession() as session:
+                                async with session.get(qr_url) as resp:
+                                    if resp.status == 200:
+                                        img_bytes = await resp.read()
+                                        sent = await context.bot.send_photo(
+                                            chat_id=chat_id_now,
+                                            photo=io.BytesIO(img_bytes),
+                                            caption=caption,
+                                            parse_mode="HTML",
+                                            reply_markup=kb
+                                        )
+                        except Exception as qr_err:
+                            logger.warning(f"Lỗi tải QR: {qr_err}")
+
+                    if not sent:
+                        sent = await context.bot.send_message(
+                            chat_id=chat_id_now,
+                            text=caption,
+                            parse_mode="HTML",
+                            reply_markup=kb
                         )
 
                     # Lưu message_id để đếm ngược cập nhật
@@ -601,7 +612,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                     # Chạy đếm ngược async
                     asyncio.create_task(cancel_order_after_timeout(
-                        order_code_int, sent.message_id, query.message.chat_id
+                        order_code_int, sent.message_id, chat_id_now
                     ))
 
                 else:
@@ -702,35 +713,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         ); return
 
-    # ── Nhập voucher ────────────────────────────────
-    if context.user_data.get("wait_voucher"):
-        context.user_data["wait_voucher"] = False
-        pid = context.user_data.get("pid")
-        qty = context.user_data.get("qty")
-        products = load_products()
-        p   = products.get(pid)
-        if not p:
-            return
-
-        db   = load_db()
-        code = text.upper()
-        v    = db["vouchers"].get(code)
-        total = p["price"] * qty
-
-        if v and v["uses"] > 0:
-            discount = int(total * v["percent"] / 100)
-            total   -= discount
-            context.user_data["voucher"] = code
-            await update.message.reply_text(
-                f"✅ Mã <b>{code}</b> hợp lệ! Giảm {v['percent']}% — tiết kiệm <b>{discount:,}đ</b>",
-                parse_mode="HTML"
-            )
-            await ask_payment_method(update, pid, qty, total, discount, code)
-        else:
-            await update.message.reply_text("❌ Mã giảm giá không hợp lệ hoặc đã hết lượt.")
-            await ask_payment_method(update, pid, qty, total, 0, "")
-        return
-
     # ── Nhập số lượng ───────────────────────────────
     if context.user_data.get("wait_qty"):
         pid = context.user_data.get("pid")
@@ -752,26 +734,8 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["wait_qty"] = False
         context.user_data["qty"]      = qty
 
-        # Hỏi voucher
-        context.user_data["wait_voucher"] = True
+        # Bỏ qua voucher, chuyển thẳng sang thanh toán
         total = p["price"] * qty
-        await update.message.reply_text(
-            f"🎟️ Bạn có mã giảm giá không?\n\n"
-            f"Nhập mã tại đây hoặc gõ <b>0</b> để bỏ qua.\n\n"
-            f"📦 {p['name']} x{qty}\n"
-            f"💵 Tạm tính: <b>{total:,}đ</b>",
-            parse_mode="HTML"
-        )
-        return
-
-    # ── Bỏ qua voucher (gõ 0) ──────────────────────
-    if text == "0" and context.user_data.get("wait_voucher"):
-        context.user_data["wait_voucher"] = False
-        pid = context.user_data.get("pid")
-        qty = context.user_data.get("qty")
-        products = load_products()
-        p   = products.get(pid)
-        total = p["price"] * qty if p else 0
         await ask_payment_method(update, pid, qty, total, 0, "")
         return
 
