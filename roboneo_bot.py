@@ -14,6 +14,7 @@ import threading
 import time
 import json
 import os
+import io
 from datetime import datetime
 from flask import Flask, request, jsonify
 from telegram import (
@@ -119,6 +120,64 @@ logger = logging.getLogger(__name__)
 #                PENDING ORDERS (RAM)
 # ════════════════════════════════════════════════════
 PENDING_ORDERS = {}   # order_code -> order dict
+PAYMENT_TIMEOUT = 300  # 5 phút = 300 giây
+
+# ════════════════════════════════════════════════════
+#         HỦY ĐƠN SAU TIMEOUT + ĐỒNG HỒ ĐẾM NGƯỢC
+# ════════════════════════════════════════════════════
+async def cancel_order_after_timeout(order_code_int: int, msg_id: int, chat_id: int):
+    """Đếm ngược 5 phút, cập nhật tin nhắn mỗi phút, hủy đơn khi hết giờ."""
+    key = str(order_code_int)
+    for remaining in [240, 180, 120, 60]:
+        await asyncio.sleep(60)
+        if key not in PENDING_ORDERS:
+            return  # Đã thanh toán, dừng lại
+        mins = remaining // 60
+        try:
+            order = PENDING_ORDERS[key]
+            products = load_products()
+            p = products.get(order["pid"], {})
+            await telegram_app.bot.edit_message_caption(
+                chat_id=chat_id,
+                message_id=msg_id,
+                caption=(
+                    f"🏦 Chuyển khoản tới <b>BIDV - 963869GIFT</b>\n\n"
+                    f"📌 Mã đơn hàng (ghi chú): <code>{order['order_code']}</code>\n"
+                    f"💰 Số tiền: <b>{order['total']:,}đ</b>\n"
+                    f"⏳ Thời gian còn lại: <b>{mins} phút</b>\n\n"
+                    f"✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản."
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Thanh toán ngay", url=order.get("checkout_url","#"))],
+                    [InlineKeyboardButton("❌ Hủy đơn", callback_data=f"cancel_{key}")]
+                ])
+            )
+        except Exception:
+            pass
+
+    # Hết 5 phút
+    await asyncio.sleep(60)
+    if key not in PENDING_ORDERS:
+        return
+    PENDING_ORDERS.pop(key, None)
+    try:
+        await telegram_app.bot.edit_message_caption(
+            chat_id=chat_id,
+            message_id=msg_id,
+            caption="⌛ <b>Đơn hàng đã hết hạn!</b>\n\nVui lòng tạo đơn mới.",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+    try:
+        await telegram_app.bot.send_message(
+            chat_id,
+            "⌛ Đơn hàng của bạn đã hết hạn thanh toán (5 phút).\nNhấn 🛒 <b>Mua hàng</b> để tạo đơn mới.",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
 
 # ════════════════════════════════════════════════════
 #                    FLASK
@@ -130,7 +189,7 @@ bot_loop     = None
 def verify_payos_signature(data: dict, signature: str) -> bool:
     sorted_data = "&".join(f"{k}={v}" for k, v in sorted(data.items()) if k != "signature")
     expected = hmac.new(PAYOS_CHECKSUM.encode(), sorted_data.encode(), hashlib.sha256).hexdigest()
-    return expected == signature
+    return hmac.compare_digest(expected, signature)
 
 @flask_app.route("/payos-webhook", methods=["POST"])
 def payos_webhook():
@@ -161,6 +220,30 @@ def payos_webhook():
     except Exception as e:
         logger.error(f"Lỗi webhook: {e}")
         return jsonify({"error": str(e)}), 500
+
+@flask_app.route("/payment-success", methods=["GET"])
+def payment_success():
+    return """<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Thanh toán thành công</title>
+    <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0d1117;color:#fff;}
+    .box{text-align:center;padding:40px;background:#161b22;border-radius:12px;border:1px solid #2ecc8a33;}
+    h1{color:#2ecc8a;font-size:2em;margin-bottom:10px;}p{color:#7a85a3;}</style></head>
+    <body><div class="box"><h1>✅ Thanh toán thành công!</h1>
+    <p>Bot đang xử lý và gửi tài khoản cho bạn.<br>Vui lòng quay lại Telegram.</p>
+    <p style="margin-top:20px;font-size:12px;color:#3a4460">Bạn có thể đóng trang này.</p>
+    </div></body></html>""", 200
+
+@flask_app.route("/payment-cancel", methods=["GET"])
+def payment_cancel():
+    return """<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Đã hủy thanh toán</title>
+    <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0d1117;color:#fff;}
+    .box{text-align:center;padding:40px;background:#161b22;border-radius:12px;border:1px solid #e0556633;}
+    h1{color:#e05566;font-size:2em;margin-bottom:10px;}p{color:#7a85a3;}</style></head>
+    <body><div class="box"><h1>❌ Đã hủy thanh toán</h1>
+    <p>Đơn hàng đã bị hủy.<br>Quay lại Telegram để thử lại.</p>
+    <p style="margin-top:20px;font-size:12px;color:#3a4460">Bạn có thể đóng trang này.</p>
+    </div></body></html>""", 200
 
 @flask_app.route("/health", methods=["GET"])
 def health():
@@ -333,6 +416,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"🎉 Chào mừng <b>{user.first_name}</b> đến với cửa hàng!\n\n"
+        "Hướng dẫn sử dụng Roboneo: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n"
         "📌 <b>Hướng dẫn:</b>\n"
         "1. Nhấn 🛒 <b>Mua hàng</b> → chọn sản phẩm\n"
         "2. Nhập số lượng cần mua\n"
@@ -470,18 +554,56 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 if result.get("code") == "00":
                     payment_url   = result["data"]["checkoutUrl"]
+                    qr_url        = result["data"].get("qrCode", "")
                     discount_text = f"\n🏷️ Giảm giá: <b>{discount:,}đ</b>" if discount > 0 else ""
-                    kb = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("💳 Thanh toán ngay", url=payment_url)]
-                    ])
-                    await query.edit_message_text(
-                        f"✅ <b>Đơn hàng đã tạo!</b>\n\n"
-                        f"📦 <b>{p['name']}</b> x{qty}{discount_text}\n"
-                        f"💰 Tổng: <b>{total:,}đ</b>\n\n"
-                        f"👇 Nhấn nút bên dưới để thanh toán QR:",
-                        parse_mode="HTML",
-                        reply_markup=kb
+
+                    # Lưu checkout_url vào pending order để dùng khi cập nhật
+                    PENDING_ORDERS[str(order_code_int)]["checkout_url"] = payment_url
+
+                    caption = (
+                        f"🏦 Chuyển khoản tới <b>BIDV - 963869GIFT</b>\n\n"
+                        f"📌 Mã đơn hàng (ghi chú): <code>{order_code_str}</code>\n"
+                        f"💰 Vui lòng chuyển khoản <b>{total:,}đ BIDV</b>.{discount_text}\n"
+                        f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
+                        f"✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản."
                     )
+                    kb = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💳 Thanh toán ngay", url=payment_url)],
+                        [InlineKeyboardButton("❌ Hủy đơn", callback_data=f"cancel_{order_code_int}")]
+                    ])
+
+                    # Xóa tin nhắn "đang tạo link"
+                    await query.delete_message()
+
+                    # Gửi ảnh QR từ URL trực tiếp
+                    if qr_url:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(qr_url) as resp:
+                                if resp.status == 200:
+                                    img_bytes = await resp.read()
+                                    sent = await query.message.chat.send_photo(
+                                        photo=io.BytesIO(img_bytes),
+                                        caption=caption,
+                                        parse_mode="HTML",
+                                        reply_markup=kb
+                                    )
+                                else:
+                                    sent = await query.message.chat.send_message(
+                                        text=caption, parse_mode="HTML", reply_markup=kb
+                                    )
+                    else:
+                        sent = await query.message.chat.send_message(
+                            text=caption, parse_mode="HTML", reply_markup=kb
+                        )
+
+                    # Lưu message_id để đếm ngược cập nhật
+                    PENDING_ORDERS[str(order_code_int)]["msg_id"] = sent.message_id
+
+                    # Chạy đếm ngược async
+                    asyncio.create_task(cancel_order_after_timeout(
+                        order_code_int, sent.message_id, query.message.chat_id
+                    ))
+
                 else:
                     PENDING_ORDERS.pop(str(order_code_int), None)
                     await query.edit_message_text(
@@ -491,6 +613,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 PENDING_ORDERS.pop(str(order_code_int), None)
                 logger.error(f"Lỗi PayOS: {e}")
                 await query.edit_message_text("❌ Lỗi kết nối PayOS. Vui lòng thử lại!")
+
+    # ── Hủy đơn hàng ────────────────────────────────
+    elif data.startswith("cancel_"):
+        key = data[7:]
+        if key in PENDING_ORDERS:
+            PENDING_ORDERS.pop(key)
+            try:
+                await query.edit_message_caption(
+                    caption="❌ <b>Đơn hàng đã bị hủy.</b>\n\nNhấn 🛒 Mua hàng để tạo đơn mới.",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                await query.edit_message_text("❌ <b>Đơn hàng đã bị hủy.</b>", parse_mode="HTML")
+        else:
+            await query.answer("Đơn hàng không tồn tại hoặc đã được xử lý.", show_alert=True)
 
     # ── Quay lại ────────────────────────────────────
     elif data == "back_products":
