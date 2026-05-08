@@ -32,7 +32,7 @@ PRODUCTS = {
         "stock": 0,       # 👈 Chỉnh số lượng sản phẩm 2
         "accounts": []
     },
-    "sp3": {S
+    "sp3": {
         "name": "Roboneo tài khoản 220-240🥕",
         "price": 2500,
         "price_display": "2k5",
