@@ -549,7 +549,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 result = await create_payment_link(
                     order_code=order_code_int,
                     amount=total,
-                    description=f"Mua {qty} tk Roboneo",
+                    description=f"{qty} RBN",
                     buyer_name=query.from_user.full_name
                 )
                 if result.get("code") == "00":
@@ -561,9 +561,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     PENDING_ORDERS[str(order_code_int)]["checkout_url"] = payment_url
 
                     caption = (
-                        f"🏦 Chuyển khoản tới <b>BIDV - 963869GIFT</b>\n\n"
+                        f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n\n"
                         f"📌 Mã đơn hàng (ghi chú): <code>{order_code_str}</code>\n"
-                        f"💰 Vui lòng chuyển khoản <b>{total:,}đ BIDV</b>.{discount_text}\n"
+                        f"💰 Vui lòng chuyển khoản <b>{total:,}đ MB bank</b>.{discount_text}\n"
                         f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
                         f"✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản."
                     )
