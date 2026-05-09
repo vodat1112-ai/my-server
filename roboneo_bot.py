@@ -1005,9 +1005,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     PENDING_ORDERS[pending_key]["checkout_url"] = payment_url
 
                     caption = (
-                        f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n\n"
-                        f"📌 Mã đơn hàng (ghi chú): <code>{order_code_str}</code>\n"
-                        f"💰 Vui lòng chuyển khoản <b>{total:,}đ MB bank</b>.{discount_text}\n"
+                        f"🏦 Vui lòng thanh toán ngay\n\n"
+                        f"💰 Vui lòng chuyển khoản <b>\n"
                         f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
                         f"✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản."
                     )
@@ -1124,7 +1123,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💰 Số dư: <b>{u['balance']:,}đ</b>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💰 Nạp tiền qua PayOS", callback_data="topup_wallet")]
+                [InlineKeyboardButton("💰 Nạp tiền ngay", callback_data="topup_wallet")]
             ])
         ); return
 
@@ -1207,7 +1206,7 @@ async def ask_payment_method(update, pid, qty, total, discount, voucher):
     p = products.get(pid)
     discount_text = f"\n🏷️ Giảm giá: <b>-{discount:,}đ</b>" if discount > 0 else ""
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Thanh toán PayOS (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
+        [InlineKeyboardButton("💳 Thanh toán ngay (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
         [InlineKeyboardButton("👛 Dùng số dư ví",              callback_data=f"pay_wallet_{pid}_{qty}")],
         [InlineKeyboardButton("🔙 Quay lại",                   callback_data="back_products")],
     ])
