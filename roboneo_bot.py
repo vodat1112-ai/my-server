@@ -801,7 +801,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = await create_payment_link(
                 order_code=order_code_int,
                 amount=amount,
-                description=f"Nap vi {user.id}",
+                description=f"{user.id}",
                 buyer_name=user.full_name,
                 return_url=f"{SERVER_URL}/topup-success"
             )
