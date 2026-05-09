@@ -571,6 +571,7 @@ async def send_accounts_to_user(order: dict):
 # ════════════════════════════════════════════════════
 def main_menu_keyboard():
     return ReplyKeyboardMarkup([
+        [KeyboardButton("📖 Hướng dẫn")],
         [KeyboardButton("🛒 Mua hàng")],
         [KeyboardButton("👤 Hồ sơ"), KeyboardButton("📋 Lịch sử mua")],
         [KeyboardButton("👛 Ví")],
@@ -589,8 +590,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"🎉 Chào mừng <b>{user.first_name}</b> đến với cửa hàng!\n\n"
-        "Hướng dẫn sử dụng Roboneo: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n"
+        "- Hướng dẫn sử dụng Roboneo: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n"
         "📌 <b>Hướng dẫn:</b>\n"
+        "- Roboneo có thể tạo cùng lúc nhiều video.\n"
         "1. Nhấn 🛒 <b>Mua hàng</b> → chọn sản phẩm\n"
         "2. Nhập số lượng cần mua\n"
         "3. Nhập mã giảm giá (nếu có)\n"
@@ -801,7 +803,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = await create_payment_link(
                 order_code=order_code_int,
                 amount=amount,
-                description=f"{user.id}",
+                description=f"Nap vi {user.id}",
                 buyer_name=user.full_name,
                 return_url=f"{SERVER_URL}/topup-success"
             )
@@ -1129,6 +1131,21 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         ); return
 
+    if text == "📖 Hướng dẫn":
+        await update.message.reply_text(
+            f"📖 <b>Hướng dẫn sử dụng</b>\n\n"
+            "Hướng dẫn chi tiết: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n\n"
+            "📌 <b>Các bước mua hàng:</b>\n"
+            "1. Nhấn 🛒 <b>Mua hàng</b> → chọn sản phẩm\n"
+            "2. Nhập số lượng cần mua\n"
+            "3. Nhập mã giảm giá (nếu có)\n"
+            "4. Chọn hình thức thanh toán:\n"
+            "   • 💳 Thanh toán (tự động)\n"
+            "   • 👛 Số dư ví\n"
+            "5. Bot tự động gửi tài khoản sau khi thanh toán! 🎉",
+            parse_mode="HTML"
+        ); return
+
     # ── Nhập số tiền nạp tùy chỉnh ─────────────────  ← MỚI
     if context.user_data.get("wait_topup_amount"):
         context.user_data["wait_topup_amount"] = False
@@ -1200,7 +1217,7 @@ async def ask_payment_method(update, pid, qty, total, discount, voucher):
     p = products.get(pid)
     discount_text = f"\n🏷️ Giảm giá: <b>-{discount:,}đ</b>" if discount > 0 else ""
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Thanh toán ngay (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
+        [InlineKeyboardButton("💳 Thanh toán (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
         [InlineKeyboardButton("👛 Dùng số dư ví",              callback_data=f"pay_wallet_{pid}_{qty}")],
         [InlineKeyboardButton("🔙 Quay lại",                   callback_data="back_products")],
     ])
