@@ -553,7 +553,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif method == "payos":
             # Dùng timestamp đầy đủ, PayOS nhận int, PENDING_ORDERS key = str của int này
-            order_code_int = int(time.time() * 1000) % 9999999   # milliseconds để giảm trùng
+            import random
+            order_code_int = int(time.time()) * 10 + random.randint(0, 9)   # milliseconds để giảm trùng
             order_code_str = f"RBN{query.from_user.id % 10000:04d}{order_code_int % 10000:04d}"
             pending_key    = str(order_code_int)   # key dùng nhất quán
 
