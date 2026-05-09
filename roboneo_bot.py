@@ -180,7 +180,7 @@ async def cancel_order_after_timeout(pending_key: str, msg_id: int, chat_id: int
                 chat_id=chat_id,
                 message_id=msg_id,
                 caption=(
-                    f"🏦 Vui lòng bấm thanh toán ngay\n\n"
+                    f"🏦 Vui lòng thanh toán ngay\n\n"
                     f"💰 Số tiền: <b>{order['total']:,}đ</b>\n"
                     f"⏳ Thời gian còn lại: <b>{mins} phút</b>\n\n"
                     f"✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản."
@@ -234,7 +234,6 @@ async def cancel_topup_after_timeout(pending_key: str, msg_id: int, chat_id: int
                 message_id=msg_id,
                 caption=(
                     f"💰 <b>Nạp tiền vào ví</b>\n\n"
-                    f"🏦 Vui lòng thanh toán ngay\n"
                     f"💵 Số tiền: <b>{topup['amount']:,}đ</b>\n"
                     f"⏳ Thời gian còn lại: <b>{mins} phút</b>\n\n"
                     f"✅ Bot sẽ tự động cộng tiền vào ví sau khi nhận được."
@@ -596,7 +595,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2. Nhập số lượng cần mua\n"
         "3. Nhập mã giảm giá (nếu có)\n"
         "4. Chọn hình thức thanh toán:\n"
-        "   • 💳 PayOS (tự động)\n"
+        "   • 💳 Thanh toán (tự động)\n"
         "   • 👛 Số dư ví\n"
         "5. Bot tự động gửi tài khoản sau khi thanh toán!\n\n"
         "🎯 Chọn menu bên dưới:",
@@ -658,8 +657,6 @@ async def handle_topup_payos(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
             caption = (
                 f"💰 <b>Nạp tiền vào ví</b>\n\n"
-                f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n"
-                f"📌 Nội dung chuyển khoản: <code>{order_code_str}</code>\n"
                 f"💵 Số tiền: <b>{amount:,}đ</b>\n"
                 f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
                 f"✅ Bot sẽ tự động cộng tiền vào ví sau khi nhận được."
@@ -698,7 +695,7 @@ async def handle_topup_payos(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
     except Exception as e:
         PENDING_TOPUPS.pop(pending_key, None)
-        logger.error(f"Lỗi tạo PayOS nạp ví: {e}")
+        logger.error(f"Lỗi tạo QR nạp ví: {e}")
         await processing_msg.edit_text("❌ Lỗi kết nối PayOS. Vui lòng thử lại!")
 
 # ════════════════════════════════════════════════════
@@ -815,8 +812,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 caption = (
                     f"💰 <b>Nạp tiền vào ví</b>\n\n"
-                    f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n"
-                    f"📌 Nội dung chuyển khoản: <code>{order_code_str}</code>\n"
                     f"💵 Số tiền: <b>{amount:,}đ</b>\n"
                     f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
                     f"✅ Bot sẽ tự động cộng tiền vào ví sau khi nhận được."
@@ -941,7 +936,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"📉 Thiếu: <b>{total - u['balance']:,}đ</b>",
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("💳 Thanh toán PayOS", callback_data=f"pay_payos_{pid}_{qty}")],
+                        [InlineKeyboardButton("💳 Thanh toán", callback_data=f"pay_payos_{pid}_{qty}")],
                         [InlineKeyboardButton("💰 Nạp tiền vào ví",  callback_data="topup_wallet")],
                         [InlineKeyboardButton("🔙 Quay lại",          callback_data="back_products")],
                     ])
@@ -1005,8 +1000,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     PENDING_ORDERS[pending_key]["checkout_url"] = payment_url
 
                     caption = (
-                        f"🏦 Vui lòng thanh toán ngay\n\n"
-                        f"💰 Vui lòng chuyển khoản <b>\n"
+                        f"💰 Vui lòng chuyển khoản thanh toán\n"
                         f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
                         f"✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản."
                     )
@@ -1206,7 +1200,7 @@ async def ask_payment_method(update, pid, qty, total, discount, voucher):
     p = products.get(pid)
     discount_text = f"\n🏷️ Giảm giá: <b>-{discount:,}đ</b>" if discount > 0 else ""
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Thanh toán ngay (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
+        [InlineKeyboardButton("💳 Thanh toán PayOS (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
         [InlineKeyboardButton("👛 Dùng số dư ví",              callback_data=f"pay_wallet_{pid}_{qty}")],
         [InlineKeyboardButton("🔙 Quay lại",                   callback_data="back_products")],
     ])
