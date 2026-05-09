@@ -613,23 +613,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception:
                         pass
 
-                    # Gửi ảnh QR từ URL trực tiếp
+                    # Tạo QR bằng VietQR (MB Bank)
+                    # Format: https://img.vietqr.io/image/{bank}-{account}-{template}.png?amount=X&addInfo=Y&accountName=Z
+                    vietqr_url = (
+                        f"https://img.vietqr.io/image/MB-2910036879-compact2.png"
+                        f"?amount={total}"
+                        f"&addInfo={order_code_str}"
+                        f"&accountName=VO%20THANH%20DAT"
+                    )
+
                     sent = None
-                    if qr_url:
-                        try:
-                            async with aiohttp.ClientSession() as session:
-                                async with session.get(qr_url) as resp:
-                                    if resp.status == 200:
-                                        img_bytes = await resp.read()
-                                        sent = await context.bot.send_photo(
-                                            chat_id=chat_id_now,
-                                            photo=io.BytesIO(img_bytes),
-                                            caption=caption,
-                                            parse_mode="HTML",
-                                            reply_markup=kb
-                                        )
-                        except Exception as qr_err:
-                            logger.warning(f"Lỗi tải QR: {qr_err}")
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(vietqr_url) as resp:
+                                if resp.status == 200:
+                                    img_bytes = await resp.read()
+                                    sent = await context.bot.send_photo(
+                                        chat_id=chat_id_now,
+                                        photo=io.BytesIO(img_bytes),
+                                        caption=caption,
+                                        parse_mode="HTML",
+                                        reply_markup=kb
+                                    )
+                    except Exception as qr_err:
+                        logger.warning(f"Lỗi tạo VietQR: {qr_err}")
 
                     if not sent:
                         sent = await context.bot.send_message(
