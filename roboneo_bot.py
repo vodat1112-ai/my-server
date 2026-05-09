@@ -42,6 +42,8 @@ SERVER_URL      = "https://my-server-production-37d7.up.railway.app"
 
 LOW_STOCK_THRESHOLD = 3   # Cảnh báo khi kho dưới X tài khoản
 MIN_TOPUP = 2000          # Số tiền nạp tối thiểu (đồng)
+MAX_PENDING_ORDERS = 1    # Số đơn mua hàng chờ thanh toán tối đa mỗi user
+MAX_PENDING_TOPUPS = 1    # Số đơn nạp ví chờ thanh toán tối đa mỗi user
 
 # ════════════════════════════════════════════════════
 #                 FILE DỮ LIỆU
@@ -121,8 +123,46 @@ logger = logging.getLogger(__name__)
 #           PENDING ORDERS & TOPUPS (RAM)
 # ════════════════════════════════════════════════════
 PENDING_ORDERS = {}   # order_code -> order dict
-PENDING_TOPUPS = {}   # order_code -> topup dict  ← MỚI
+PENDING_TOPUPS = {}   # order_code -> topup dict
 PAYMENT_TIMEOUT = 300  # 5 phút = 300 giây
+
+# ════════════════════════════════════════════════════
+#          KIỂM TRA GIỚI HẠN PENDING MỖI USER
+# ════════════════════════════════════════════════════
+def get_user_pending_orders(user_id: int) -> list:
+    """Trả về danh sách đơn MUA HÀNG đang chờ của user."""
+    return [
+        (key, o) for key, o in PENDING_ORDERS.items()
+        if o["user_id"] == user_id
+    ]
+
+def get_user_pending_topups(user_id: int) -> list:
+    """Trả về danh sách đơn NẠP VÍ đang chờ của user."""
+    return [
+        (key, t) for key, t in PENDING_TOPUPS.items()
+        if t["user_id"] == user_id
+    ]
+
+def format_pending_orders_text(pending: list) -> str:
+    """Tạo text hiển thị các đơn mua đang chờ."""
+    lines_out = []
+    for key, o in pending:
+        lines_out.append(
+            f"  • Mã <code>{o['order_code']}</code> — "
+            f"<b>{o['total']:,}đ</b>"
+        )
+    return "\n".join(lines_out)
+
+def format_pending_topups_text(pending: list) -> str:
+    """Tạo text hiển thị các đơn nạp đang chờ."""
+    lines_out = []
+    for key, t in pending:
+        lines_out.append(
+            f"  • Mã <code>{t['order_code']}</code> — "
+            f"<b>{t['amount']:,}đ</b>"
+        )
+    return "\n".join(lines_out)
+
 
 # ════════════════════════════════════════════════════
 #         HỦY ĐƠN SAU TIMEOUT + ĐỒNG HỒ ĐẾM NGƯỢC
@@ -759,6 +799,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("topup_confirm_"):
         amount = int(data.replace("topup_confirm_", ""))
         # Tạo một "fake" update.message-like để tái dùng handle_topup_payos
+        # ── Kiểm tra giới hạn đơn nạp ví pending ────────
+        user_pending_topups = get_user_pending_topups(query.from_user.id)
+        if len(user_pending_topups) >= MAX_PENDING_TOPUPS:
+            pending_info = format_pending_topups_text(user_pending_topups)
+            await query.edit_message_text(
+                f"⚠️ <b>Bạn đang có {len(user_pending_topups)} yêu cầu nạp tiền chờ xử lý!</b>\n\n"
+                f"{pending_info}\n\n"
+                f"Vui lòng hoàn tất hoặc hủy yêu cầu cũ trước khi tạo mới.\n"
+                f"Yêu cầu sẽ tự hủy sau <b>5 phút</b> nếu chưa thanh toán.",
+                parse_mode="HTML"
+            )
+            return
         context.user_data["topup_amount"] = amount
         await query.edit_message_text("⏳ Đang tạo link thanh toán...")
 
@@ -963,6 +1015,18 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif method == "payos":
             order_code_int = int(time.time() * 1000) % 9999999
+            # ── Kiểm tra giới hạn đơn pending mỗi user ──────
+            user_pending_orders = get_user_pending_orders(query.from_user.id)
+            if len(user_pending_orders) >= MAX_PENDING_ORDERS:
+                pending_info = format_pending_orders_text(user_pending_orders)
+                await query.edit_message_text(
+                    f"⚠️ <b>Bạn đang có {len(user_pending_orders)} đơn chờ thanh toán!</b>\n\n"
+                    f"{pending_info}\n\n"
+                    f"Vui lòng hoàn tất hoặc hủy đơn cũ trước khi tạo đơn mới.\n"
+                    f"Đơn sẽ tự hủy sau <b>5 phút</b> nếu chưa thanh toán.",
+                    parse_mode="HTML"
+                )
+                return
             order_code_str = f"RBN{query.from_user.id % 10000:04d}{order_code_int % 10000:04d}"
             pending_key    = str(order_code_int)
 
@@ -1216,7 +1280,7 @@ async def ask_payment_method(update, pid, qty, total, discount, voucher):
     p = products.get(pid)
     discount_text = f"\n🏷️ Giảm giá: <b>-{discount:,}đ</b>" if discount > 0 else ""
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Thanh toán (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
+        [InlineKeyboardButton("💳 Thanh toán PayOS (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
         [InlineKeyboardButton("👛 Dùng số dư ví",              callback_data=f"pay_wallet_{pid}_{qty}")],
         [InlineKeyboardButton("🔙 Quay lại",                   callback_data="back_products")],
     ])
