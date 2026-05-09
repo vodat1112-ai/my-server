@@ -141,7 +141,7 @@ async def cancel_order_after_timeout(pending_key: str, msg_id: int, chat_id: int
                 chat_id=chat_id,
                 message_id=msg_id,
                 caption=(
-                    f"🏦 Chuyển khoản tới <b>MB BANK - 2910036879</b>\n\n"
+                    f"🏦 Chuyển khoản tới <b>MB BANK - 2910036879 VO THANH DAT</b>\n\n"
                     f"📌 Mã đơn hàng (ghi chú): <code>{order['order_code']}</code>\n"
                     f"💰 Số tiền: <b>{order['total']:,}đ</b>\n"
                     f"⏳ Thời gian còn lại: <b>{mins} phút</b>\n\n"
@@ -187,11 +187,23 @@ telegram_app = None
 bot_loop     = None   # sẽ được gán đúng loop của bot sau khi run_polling bắt đầu
 
 def verify_payos_signature(data: dict, signature: str) -> bool:
-    # Ký tất cả field trong data (trừ "signature") theo alphabet — đúng spec PayOS
-    sorted_data = "&".join(f"{k}={data[k]}" for k in sorted(data.keys()) if k != "signature")
+    # PayOS ký đúng các field này theo thứ tự alphabet
+    PAYOS_SIGN_FIELDS = [
+        "accountNumber", "amount", "cancelUrl", "code", "currency", "desc",
+        "description", "orderCode", "paymentLinkId", "reference", "returnUrl",
+        "status", "success", "transactionDateTime",
+        "counterAccountBankId", "counterAccountBankName",
+        "counterAccountName", "counterAccountNumber",
+        "virtualAccountName", "virtualAccountNumber"
+    ]
+    parts = []
+    for k in sorted(data.keys()):
+        if k in PAYOS_SIGN_FIELDS:
+            parts.append(f"{k}={data[k]}")
+    sorted_data = "&".join(parts)
     expected = hmac.new(PAYOS_CHECKSUM.encode(), sorted_data.encode(), hashlib.sha256).hexdigest()
-    logger.info(f"PayOS sig check | expected={expected} | got={signature}")
-    if not signature:   # test ping từ PayOS dashboard, bỏ qua
+    logger.info(f"PayOS sig check | string_to_sign={sorted_data} | expected={expected} | got={signature}")
+    if not signature:
         return True
     return hmac.compare_digest(expected, signature)
 
@@ -565,7 +577,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 result = await create_payment_link(
                     order_code=order_code_int,
                     amount=total,
-                    description=order_code_str,
+                    description=f"{qty} RBN",
                     buyer_name=query.from_user.full_name
                 )
                 if result.get("code") == "00":
