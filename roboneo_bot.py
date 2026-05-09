@@ -935,7 +935,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Để nạp tiền, liên hệ admin: {SUPPORT}",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💰 Nạp tiền qua PayOS", callback_data="topup_wallet")]
+                [InlineKeyboardButton("💰 Nạp tiền ngay", callback_data="topup_wallet")]
             ])
         )
         return
