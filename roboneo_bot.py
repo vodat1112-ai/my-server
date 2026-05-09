@@ -125,9 +125,9 @@ PAYMENT_TIMEOUT = 300  # 5 phút = 300 giây
 # ════════════════════════════════════════════════════
 #         HỦY ĐƠN SAU TIMEOUT + ĐỒNG HỒ ĐẾM NGƯỢC
 # ════════════════════════════════════════════════════
-async def cancel_order_after_timeout(order_code_int: int, msg_id: int, chat_id: int):
+async def cancel_order_after_timeout(pending_key: str, msg_id: int, chat_id: int):
     """Đếm ngược 5 phút, cập nhật tin nhắn mỗi phút, hủy đơn khi hết giờ."""
-    key = str(order_code_int)
+    key = pending_key
     for remaining in [240, 180, 120, 60]:
         await asyncio.sleep(60)
         if key not in PENDING_ORDERS:
@@ -141,7 +141,7 @@ async def cancel_order_after_timeout(order_code_int: int, msg_id: int, chat_id: 
                 chat_id=chat_id,
                 message_id=msg_id,
                 caption=(
-                    f"🏦 Chuyển khoản tới <b>BIDV - 963869GIFT</b>\n\n"
+                    f"🏦 Chuyển khoản tới <b>MB BANK - 2910036879</b>\n\n"
                     f"📌 Mã đơn hàng (ghi chú): <code>{order['order_code']}</code>\n"
                     f"💰 Số tiền: <b>{order['total']:,}đ</b>\n"
                     f"⏳ Thời gian còn lại: <b>{mins} phút</b>\n\n"
@@ -184,18 +184,22 @@ async def cancel_order_after_timeout(order_code_int: int, msg_id: int, chat_id: 
 # ════════════════════════════════════════════════════
 flask_app    = Flask(__name__)
 telegram_app = None
-bot_loop     = None
+bot_loop     = None   # sẽ được gán đúng loop của bot sau khi run_polling bắt đầu
 
 def verify_payos_signature(data: dict, signature: str) -> bool:
-    sorted_data = "&".join(f"{k}={v}" for k, v in sorted(data.items()) if k != "signature")
+    # Ký tất cả field trong data (trừ "signature") theo alphabet — đúng spec PayOS
+    sorted_data = "&".join(f"{k}={data[k]}" for k in sorted(data.keys()) if k != "signature")
     expected = hmac.new(PAYOS_CHECKSUM.encode(), sorted_data.encode(), hashlib.sha256).hexdigest()
+    logger.info(f"PayOS sig check | expected={expected} | got={signature}")
+    if not signature:   # test ping từ PayOS dashboard, bỏ qua
+        return True
     return hmac.compare_digest(expected, signature)
 
 @flask_app.route("/payos-webhook", methods=["POST"])
 def payos_webhook():
     try:
         body = request.get_json()
-        logger.info(f"PayOS webhook: {body}")
+        logger.info(f"PayOS webhook nhận: {body}")
         if not body:
             return jsonify({"error": "no body"}), 400
 
@@ -203,22 +207,31 @@ def payos_webhook():
         signature = body.get("signature", "")
 
         if not verify_payos_signature(data, signature):
-            logger.warning("Chữ ký PayOS không hợp lệ!")
+            logger.warning(f"Chữ ký PayOS không hợp lệ! data={data}")
             return jsonify({"error": "invalid signature"}), 400
 
         order_code = str(data.get("orderCode", ""))
         status     = data.get("status", "")
 
-        if status == "PAID" and order_code in PENDING_ORDERS:
-            order = PENDING_ORDERS.pop(order_code)
-            asyncio.run_coroutine_threadsafe(
-                send_accounts_to_user(order), bot_loop
-            )
+        logger.info(f"PayOS status={status} | orderCode={order_code} | pending keys={list(PENDING_ORDERS.keys())}")
+
+        if status == "PAID":
+            order = PENDING_ORDERS.pop(order_code, None)
+            if order:
+                logger.info(f"✅ Tìm thấy đơn {order_code}, đang giao hàng...")
+                if bot_loop and not bot_loop.is_closed():
+                    asyncio.run_coroutine_threadsafe(
+                        send_accounts_to_user(order), bot_loop
+                    )
+                else:
+                    logger.error("❌ bot_loop chưa sẵn sàng!")
+            else:
+                logger.warning(f"⚠️ Không tìm thấy đơn {order_code} trong PENDING_ORDERS!")
 
         return jsonify({"success": True}), 200
 
     except Exception as e:
-        logger.error(f"Lỗi webhook: {e}")
+        logger.error(f"Lỗi webhook: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 @flask_app.route("/payment-success", methods=["GET"])
@@ -532,10 +545,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_accounts_to_user(order)
 
         elif method == "payos":
-            order_code_int = int(time.time()) % 9999999
+            # Dùng timestamp đầy đủ, PayOS nhận int, PENDING_ORDERS key = str của int này
+            order_code_int = int(time.time() * 1000) % 9999999   # milliseconds để giảm trùng
             order_code_str = f"RBN{query.from_user.id % 10000:04d}{order_code_int % 10000:04d}"
+            pending_key    = str(order_code_int)   # key dùng nhất quán
 
-            PENDING_ORDERS[str(order_code_int)] = {
+            PENDING_ORDERS[pending_key] = {
                 "order_code": order_code_str,
                 "user_id": query.from_user.id,
                 "chat_id": query.message.chat_id,
@@ -543,13 +558,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "total": total, "discount": discount,
                 "method": "payos", "voucher": voucher
             }
+            logger.info(f"Tạo đơn PayOS | key={pending_key} | orderCode={order_code_int} | amount={total}")
 
             await query.edit_message_text("⏳ Đang tạo link thanh toán...")
             try:
                 result = await create_payment_link(
                     order_code=order_code_int,
                     amount=total,
-                    description=f"{qty} RBN",
+                    description=order_code_str,
                     buyer_name=query.from_user.full_name
                 )
                 if result.get("code") == "00":
@@ -558,7 +574,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     discount_text = f"\n🏷️ Giảm giá: <b>{discount:,}đ</b>" if discount > 0 else ""
 
                     # Lưu checkout_url vào pending order để dùng khi cập nhật
-                    PENDING_ORDERS[str(order_code_int)]["checkout_url"] = payment_url
+                    PENDING_ORDERS[pending_key]["checkout_url"] = payment_url
 
                     caption = (
                         f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n\n"
@@ -569,7 +585,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     )
                     kb = InlineKeyboardMarkup([
                         [InlineKeyboardButton("💳 Thanh toán ngay", url=payment_url)],
-                        [InlineKeyboardButton("❌ Hủy đơn", callback_data=f"cancel_{order_code_int}")]
+                        [InlineKeyboardButton("❌ Hủy đơn", callback_data=f"cancel_{pending_key}")]
                     ])
 
                     # Lưu chat_id trước khi xóa tin nhắn
@@ -608,20 +624,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         )
 
                     # Lưu message_id để đếm ngược cập nhật
-                    PENDING_ORDERS[str(order_code_int)]["msg_id"] = sent.message_id
+                    PENDING_ORDERS[pending_key]["msg_id"] = sent.message_id
 
                     # Chạy đếm ngược async
                     asyncio.create_task(cancel_order_after_timeout(
-                        order_code_int, sent.message_id, chat_id_now
+                        pending_key, sent.message_id, chat_id_now
                     ))
 
                 else:
-                    PENDING_ORDERS.pop(str(order_code_int), None)
+                    PENDING_ORDERS.pop(pending_key, None)
                     await query.edit_message_text(
                         f"❌ Lỗi tạo thanh toán: {result.get('desc', 'Không xác định')}"
                     )
             except Exception as e:
-                PENDING_ORDERS.pop(str(order_code_int), None)
+                PENDING_ORDERS.pop(pending_key, None)
                 logger.error(f"Lỗi PayOS: {e}")
                 await query.edit_message_text("❌ Lỗi kết nối PayOS. Vui lòng thử lại!")
 
@@ -982,12 +998,7 @@ def run_flask():
 def main():
     global telegram_app, bot_loop
 
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    logger.info("✅ Flask đang chạy trên port 8080")
-
     telegram_app = Application.builder().token(BOT_TOKEN).build()
-    bot_loop     = asyncio.get_event_loop()
 
     # Lệnh
     telegram_app.add_handler(CommandHandler("start",       start))
@@ -1005,6 +1016,15 @@ def main():
     # Callback & text
     telegram_app.add_handler(CallbackQueryHandler(callback_handler))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+
+    # Lấy đúng event loop mà run_polling sẽ dùng
+    bot_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(bot_loop)
+
+    # Khởi động Flask sau khi có loop
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logger.info("✅ Flask đang chạy trên port 8080")
 
     logger.info("✅ Roboneo Bot đang chạy...")
     telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
