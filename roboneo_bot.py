@@ -187,22 +187,13 @@ telegram_app = None
 bot_loop     = None   # sẽ được gán đúng loop của bot sau khi run_polling bắt đầu
 
 def verify_payos_signature(data: dict, signature: str) -> bool:
-    # PayOS ký đúng các field này theo thứ tự alphabet
-    PAYOS_SIGN_FIELDS = [
-        "accountNumber", "amount", "cancelUrl", "code", "currency", "desc",
-        "description", "orderCode", "paymentLinkId", "reference", "returnUrl",
-        "status", "success", "transactionDateTime",
-        "counterAccountBankId", "counterAccountBankName",
-        "counterAccountName", "counterAccountNumber",
-        "virtualAccountName", "virtualAccountNumber"
-    ]
-    parts = []
-    for k in sorted(data.keys()):
-        if k in PAYOS_SIGN_FIELDS:
-            parts.append(f"{k}={data[k]}")
-    sorted_data = "&".join(parts)
+    # Convert None -> "" trước khi ký, đúng spec PayOS
+    sorted_data = "&".join(
+        f"{k}={'' if data[k] is None else data[k]}"
+        for k in sorted(data.keys()) if k != "signature"
+    )
     expected = hmac.new(PAYOS_CHECKSUM.encode(), sorted_data.encode(), hashlib.sha256).hexdigest()
-    logger.info(f"PayOS sig check | string_to_sign={sorted_data} | expected={expected} | got={signature}")
+    logger.info(f"PayOS sig check | expected={expected} | got={signature}")
     if not signature:
         return True
     return hmac.compare_digest(expected, signature)
