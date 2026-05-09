@@ -204,7 +204,8 @@ def verify_payos_signature(data: dict, signature: str) -> bool:
     expected = hmac.new(PAYOS_CHECKSUM.encode(), sorted_data.encode(), hashlib.sha256).hexdigest()
     logger.info(f"PayOS sig check | string_to_sign={sorted_data} | expected={expected} | got={signature}")
     if not signature:
-        return True
+        logger.warning("Webhook không có signature")
+        return False
     return hmac.compare_digest(expected, signature)
 
 @flask_app.route("/payos-webhook", methods=["POST"])
@@ -227,7 +228,7 @@ def payos_webhook():
 
         logger.info(f"PayOS status={status} | orderCode={order_code} | pending keys={list(PENDING_ORDERS.keys())}")
 
-        if status == "PAID":
+        if status == "PAID" or data.get("success") is True:
             order = PENDING_ORDERS.pop(order_code, None)
             if order:
                 logger.info(f"✅ Tìm thấy đơn {order_code}, đang giao hàng...")
@@ -590,7 +591,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                     caption = (
                         f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n\n"
-                        f"📌 Mã đơn hàng (ghi chú): <code>{order_code_str}</code>\n"
+                        f"📌 Mã đơn hàng (ghi chú): <code>{order_code_int}</code>\n"
                         f"💰 Vui lòng chuyển khoản <b>{total:,}đ MB bank</b>.{discount_text}\n"
                         f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
                         f"✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản."
