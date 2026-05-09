@@ -1272,7 +1272,7 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Không có quyền!"); return
     if not context.args:
         await update.message.reply_text(
-            "Cú pháp: /broadcast &lt;nội dung&gt;\nVí dụ: /broadcast 🎉 Shop có khuyến mãi hôm nay!",
+            "Cú pháp: /thongbao &lt;nội dung&gt;\nVí dụ: /thongbao 🎉 Shop có khuyến mãi hôm nay!",
             parse_mode="HTML"
         ); return
 
@@ -1498,7 +1498,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/napvi &lt;user_id&gt; &lt;tiền&gt;                    — Nạp ví thủ công\n"
         "/addvoucher &lt;CODE&gt; &lt;%&gt; &lt;lần&gt;              — Tạo voucher\n"
         "/vouchers                                      — Xem voucher\n"
-        "/broadcast &lt;nội dung&gt;                       — Gửi thông báo tất cả user",
+        "/thongbao &lt;nội dung&gt;                       — Gửi thông báo tất cả user",
         parse_mode="HTML"
     )
 
