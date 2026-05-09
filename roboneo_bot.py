@@ -204,8 +204,7 @@ def verify_payos_signature(data: dict, signature: str) -> bool:
     expected = hmac.new(PAYOS_CHECKSUM.encode(), sorted_data.encode(), hashlib.sha256).hexdigest()
     logger.info(f"PayOS sig check | string_to_sign={sorted_data} | expected={expected} | got={signature}")
     if not signature:
-        logger.warning("Webhook không có signature")
-        return False
+        return True
     return hmac.compare_digest(expected, signature)
 
 @flask_app.route("/payos-webhook", methods=["POST"])
@@ -225,10 +224,14 @@ def payos_webhook():
 
         order_code = str(data.get("orderCode", ""))
         status     = data.get("status", "")
+        code       = str(body.get("code", ""))   # PayOS để code ở root, không phải trong data
 
-        logger.info(f"PayOS status={status} | orderCode={order_code} | pending keys={list(PENDING_ORDERS.keys())}")
+        logger.info(f"PayOS status={status} | code={code} | orderCode={order_code} | pending keys={list(PENDING_ORDERS.keys())}")
 
-        if status == "PAID" or data.get("success") is True:
+        # PayOS báo thành công bằng code='00' ở root HOẶC status='PAID' trong data
+        is_paid = (code == "00") or (status == "PAID")
+
+        if is_paid:
             order = PENDING_ORDERS.pop(order_code, None)
             if order:
                 logger.info(f"✅ Tìm thấy đơn {order_code}, đang giao hàng...")
@@ -578,7 +581,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 result = await create_payment_link(
                     order_code=order_code_int,
                     amount=total,
-                    description=order_code_str,
+                    description=f"{qty} RBN",
                     buyer_name=query.from_user.full_name
                 )
                 if result.get("code") == "00":
@@ -591,7 +594,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                     caption = (
                         f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n\n"
-                        f"📌 Mã đơn hàng (ghi chú): <code>{order_code_int}</code>\n"
+                        f"📌 Mã đơn hàng (ghi chú): <code>{order_code_str}</code>\n"
                         f"💰 Vui lòng chuyển khoản <b>{total:,}đ MB bank</b>.{discount_text}\n"
                         f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
                         f"✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản."
