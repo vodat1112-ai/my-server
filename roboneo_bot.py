@@ -14,7 +14,6 @@ import threading
 import time
 import json
 import os
-import io
 from datetime import datetime
 from flask import Flask, request, jsonify
 from telegram import (
@@ -181,8 +180,7 @@ async def cancel_order_after_timeout(pending_key: str, msg_id: int, chat_id: int
                 chat_id=chat_id,
                 message_id=msg_id,
                 caption=(
-                    f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n\n"
-                    f"📌 Mã đơn hàng (ghi chú): <code>{order['order_code']}</code>\n"
+                    f"🏦 Vui lòng bấm thanh toán ngay\n\n"
                     f"💰 Số tiền: <b>{order['total']:,}đ</b>\n"
                     f"⏳ Thời gian còn lại: <b>{mins} phút</b>\n\n"
                     f"✅ Sau khi chuyển thành công, bot sẽ tự động xác nhận và gửi tài khoản."
@@ -236,8 +234,7 @@ async def cancel_topup_after_timeout(pending_key: str, msg_id: int, chat_id: int
                 message_id=msg_id,
                 caption=(
                     f"💰 <b>Nạp tiền vào ví</b>\n\n"
-                    f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n"
-                    f"📌 Nội dung chuyển khoản: <code>{topup['order_code']}</code>\n"
+                    f"🏦 Vui lòng thanh toán ngay\n"
                     f"💵 Số tiền: <b>{topup['amount']:,}đ</b>\n"
                     f"⏳ Thời gian còn lại: <b>{mins} phút</b>\n\n"
                     f"✅ Bot sẽ tự động cộng tiền vào ví sau khi nhận được."
@@ -679,37 +676,13 @@ async def handle_topup_payos(update: Update, context: ContextTypes.DEFAULT_TYPE,
             except Exception:
                 pass
 
-            # QR VietQR
-            vietqr_url = (
-                f"https://img.vietqr.io/image/MB-2910036879-compact2.png"
-                f"?amount={amount}"
-                f"&addInfo={order_code_str}"
-                f"&accountName=VO%20THANH%20DAT"
+
+            sent = await context.bot.send_message(
+                chat_id=chat_id_now,
+                text=caption,
+                parse_mode="HTML",
+                reply_markup=kb
             )
-
-            sent = None
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(vietqr_url) as resp:
-                        if resp.status == 200:
-                            img_bytes = await resp.read()
-                            sent = await context.bot.send_photo(
-                                chat_id=chat_id_now,
-                                photo=io.BytesIO(img_bytes),
-                                caption=caption,
-                                parse_mode="HTML",
-                                reply_markup=kb
-                            )
-            except Exception as qr_err:
-                logger.warning(f"Lỗi tạo VietQR cho nạp ví: {qr_err}")
-
-            if not sent:
-                sent = await context.bot.send_message(
-                    chat_id=chat_id_now,
-                    text=caption,
-                    parse_mode="HTML",
-                    reply_markup=kb
-                )
 
             PENDING_TOPUPS[pending_key]["msg_id"] = sent.message_id
 
@@ -859,36 +832,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception:
                     pass
 
-                vietqr_url = (
-                    f"https://img.vietqr.io/image/MB-2910036879-compact2.png"
-                    f"?amount={amount}"
-                    f"&addInfo={order_code_str}"
-                    f"&accountName=VO%20THANH%20DAT"
+
+                sent = await telegram_app.bot.send_message(
+                    chat_id=chat_id_now,
+                    text=caption,
+                    parse_mode="HTML",
+                    reply_markup=kb
                 )
-
-                sent = None
-                try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(vietqr_url) as resp:
-                            if resp.status == 200:
-                                img_bytes = await resp.read()
-                                sent = await telegram_app.bot.send_photo(
-                                    chat_id=chat_id_now,
-                                    photo=io.BytesIO(img_bytes),
-                                    caption=caption,
-                                    parse_mode="HTML",
-                                    reply_markup=kb
-                                )
-                except Exception as qr_err:
-                    logger.warning(f"Lỗi VietQR nạp ví: {qr_err}")
-
-                if not sent:
-                    sent = await telegram_app.bot.send_message(
-                        chat_id=chat_id_now,
-                        text=caption,
-                        parse_mode="HTML",
-                        reply_markup=kb
-                    )
 
                 PENDING_TOPUPS[pending_key]["msg_id"] = sent.message_id
                 asyncio.create_task(cancel_topup_after_timeout(
@@ -935,7 +885,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Để nạp tiền, liên hệ admin: {SUPPORT}",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💰 Nạp tiền ngay", callback_data="topup_wallet")]
+                [InlineKeyboardButton("💰 Nạp tiền qua PayOS", callback_data="topup_wallet")]
             ])
         )
         return
@@ -1072,36 +1022,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception:
                         pass
 
-                    vietqr_url = (
-                        f"https://img.vietqr.io/image/MB-2910036879-compact2.png"
-                        f"?amount={total}"
-                        f"&addInfo={order_code_str}"
-                        f"&accountName=VO%20THANH%20DAT"
+
+                    sent = await telegram_app.bot.send_message(
+                        chat_id=chat_id_now,
+                        text=caption,
+                        parse_mode="HTML",
+                        reply_markup=kb
                     )
-
-                    sent = None
-                    try:
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(vietqr_url) as resp:
-                                if resp.status == 200:
-                                    img_bytes = await resp.read()
-                                    sent = await telegram_app.bot.send_photo(
-                                        chat_id=chat_id_now,
-                                        photo=io.BytesIO(img_bytes),
-                                        caption=caption,
-                                        parse_mode="HTML",
-                                        reply_markup=kb
-                                    )
-                    except Exception as qr_err:
-                        logger.warning(f"Lỗi tạo VietQR: {qr_err}")
-
-                    if not sent:
-                        sent = await telegram_app.bot.send_message(
-                            chat_id=chat_id_now,
-                            text=caption,
-                            parse_mode="HTML",
-                            reply_markup=kb
-                        )
 
                     PENDING_ORDERS[pending_key]["msg_id"] = sent.message_id
                     asyncio.create_task(cancel_order_after_timeout(
