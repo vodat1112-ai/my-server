@@ -41,6 +41,7 @@ PAYOS_API_URL   = "https://api-merchant.payos.vn"
 SERVER_URL      = "https://my-server-production-37d7.up.railway.app"
 
 LOW_STOCK_THRESHOLD = 3   # Cảnh báo khi kho dưới X tài khoản
+MIN_TOPUP = 2000          # Số tiền nạp tối thiểu (đồng)
 
 # ════════════════════════════════════════════════════
 #                 FILE DỮ LIỆU
@@ -117,31 +118,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ════════════════════════════════════════════════════
-#                PENDING ORDERS (RAM)
+#           PENDING ORDERS & TOPUPS (RAM)
 # ════════════════════════════════════════════════════
 PENDING_ORDERS = {}   # order_code -> order dict
+PENDING_TOPUPS = {}   # order_code -> topup dict  ← MỚI
 PAYMENT_TIMEOUT = 300  # 5 phút = 300 giây
 
 # ════════════════════════════════════════════════════
 #         HỦY ĐƠN SAU TIMEOUT + ĐỒNG HỒ ĐẾM NGƯỢC
 # ════════════════════════════════════════════════════
 async def cancel_order_after_timeout(pending_key: str, msg_id: int, chat_id: int):
-    """Đếm ngược 5 phút, cập nhật tin nhắn mỗi phút, hủy đơn khi hết giờ."""
+    """Đếm ngược 5 phút cho đơn MUA HÀNG."""
     key = pending_key
     for remaining in [240, 180, 120, 60]:
         await asyncio.sleep(60)
         if key not in PENDING_ORDERS:
-            return  # Đã thanh toán, dừng lại
+            return
         mins = remaining // 60
         try:
             order = PENDING_ORDERS[key]
-            products = load_products()
-            p = products.get(order["pid"], {})
             await telegram_app.bot.edit_message_caption(
                 chat_id=chat_id,
                 message_id=msg_id,
                 caption=(
-                    f"🏦 Chuyển khoản tới <b>MB BANK - 2910036879 VO THANH DAT</b>\n\n"
+                    f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n\n"
                     f"📌 Mã đơn hàng (ghi chú): <code>{order['order_code']}</code>\n"
                     f"💰 Số tiền: <b>{order['total']:,}đ</b>\n"
                     f"⏳ Thời gian còn lại: <b>{mins} phút</b>\n\n"
@@ -156,15 +156,13 @@ async def cancel_order_after_timeout(pending_key: str, msg_id: int, chat_id: int
         except Exception:
             pass
 
-    # Hết 5 phút
     await asyncio.sleep(60)
     if key not in PENDING_ORDERS:
         return
     PENDING_ORDERS.pop(key, None)
     try:
         await telegram_app.bot.edit_message_caption(
-            chat_id=chat_id,
-            message_id=msg_id,
+            chat_id=chat_id, message_id=msg_id,
             caption="⌛ <b>Đơn hàng đã hết hạn!</b>\n\nVui lòng tạo đơn mới.",
             parse_mode="HTML"
         )
@@ -179,15 +177,69 @@ async def cancel_order_after_timeout(pending_key: str, msg_id: int, chat_id: int
     except Exception:
         pass
 
+
+# ════════════════════════════════════════════════════
+#   HỦY ĐƠN NẠP VI SAU TIMEOUT + ĐẾM NGƯỢC  ← MỚI
+# ════════════════════════════════════════════════════
+async def cancel_topup_after_timeout(pending_key: str, msg_id: int, chat_id: int):
+    """Đếm ngược 5 phút cho đơn NẠP VÍ."""
+    key = pending_key
+    for remaining in [240, 180, 120, 60]:
+        await asyncio.sleep(60)
+        if key not in PENDING_TOPUPS:
+            return
+        mins = remaining // 60
+        try:
+            topup = PENDING_TOPUPS[key]
+            await telegram_app.bot.edit_message_caption(
+                chat_id=chat_id,
+                message_id=msg_id,
+                caption=(
+                    f"💰 <b>Nạp tiền vào ví</b>\n\n"
+                    f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n"
+                    f"📌 Nội dung chuyển khoản: <code>{topup['order_code']}</code>\n"
+                    f"💵 Số tiền: <b>{topup['amount']:,}đ</b>\n"
+                    f"⏳ Thời gian còn lại: <b>{mins} phút</b>\n\n"
+                    f"✅ Bot sẽ tự động cộng tiền vào ví sau khi nhận được."
+                ),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Thanh toán ngay", url=topup.get("checkout_url", "#"))],
+                    [InlineKeyboardButton("❌ Hủy nạp tiền", callback_data=f"cancel_topup_{key}")]
+                ])
+            )
+        except Exception:
+            pass
+
+    await asyncio.sleep(60)
+    if key not in PENDING_TOPUPS:
+        return
+    PENDING_TOPUPS.pop(key, None)
+    try:
+        await telegram_app.bot.edit_message_caption(
+            chat_id=chat_id, message_id=msg_id,
+            caption="⌛ <b>Yêu cầu nạp tiền đã hết hạn!</b>\n\nVui lòng thử lại.",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+    try:
+        await telegram_app.bot.send_message(
+            chat_id,
+            "⌛ Yêu cầu nạp tiền của bạn đã hết hạn (5 phút).\nNhấn 👛 <b>Ví</b> → <b>💰 Nạp tiền</b> để thử lại.",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
 # ════════════════════════════════════════════════════
 #                    FLASK
 # ════════════════════════════════════════════════════
 flask_app    = Flask(__name__)
 telegram_app = None
-bot_loop     = None   # sẽ được gán đúng loop của bot sau khi run_polling bắt đầu
+bot_loop     = None
 
 def verify_payos_signature(data: dict, signature: str) -> bool:
-    # Convert None -> "" trước khi ký, đúng spec PayOS
     sorted_data = "&".join(
         f"{k}={'' if data[k] is None else data[k]}"
         for k in sorted(data.keys()) if k != "signature"
@@ -215,25 +267,38 @@ def payos_webhook():
 
         order_code = str(data.get("orderCode", ""))
         status     = data.get("status", "")
-        code       = str(body.get("code", ""))   # PayOS để code ở root, không phải trong data
+        code       = str(body.get("code", ""))
 
-        logger.info(f"PayOS status={status} | code={code} | orderCode={order_code} | pending keys={list(PENDING_ORDERS.keys())}")
+        logger.info(f"PayOS status={status} | code={code} | orderCode={order_code}")
 
-        # PayOS báo thành công bằng code='00' ở root HOẶC status='PAID' trong data
         is_paid = (code == "00") or (status == "PAID")
 
         if is_paid:
+            # ── Kiểm tra đơn MUA HÀNG ──────────────────
             order = PENDING_ORDERS.pop(order_code, None)
             if order:
-                logger.info(f"✅ Tìm thấy đơn {order_code}, đang giao hàng...")
+                logger.info(f"✅ Đơn mua hàng {order_code} — đang giao hàng...")
                 if bot_loop and not bot_loop.is_closed():
                     asyncio.run_coroutine_threadsafe(
                         send_accounts_to_user(order), bot_loop
                     )
                 else:
                     logger.error("❌ bot_loop chưa sẵn sàng!")
-            else:
-                logger.warning(f"⚠️ Không tìm thấy đơn {order_code} trong PENDING_ORDERS!")
+                return jsonify({"success": True}), 200
+
+            # ── Kiểm tra đơn NẠP VÍ ────────────────────
+            topup = PENDING_TOPUPS.pop(order_code, None)
+            if topup:
+                logger.info(f"✅ Đơn nạp ví {order_code} — đang cộng tiền...")
+                if bot_loop and not bot_loop.is_closed():
+                    asyncio.run_coroutine_threadsafe(
+                        process_topup(topup), bot_loop
+                    )
+                else:
+                    logger.error("❌ bot_loop chưa sẵn sàng!")
+                return jsonify({"success": True}), 200
+
+            logger.warning(f"⚠️ Không tìm thấy đơn {order_code} trong PENDING_ORDERS hoặc PENDING_TOPUPS!")
 
         return jsonify({"success": True}), 200
 
@@ -250,6 +315,18 @@ def payment_success():
     h1{color:#2ecc8a;font-size:2em;margin-bottom:10px;}p{color:#7a85a3;}</style></head>
     <body><div class="box"><h1>✅ Thanh toán thành công!</h1>
     <p>Bot đang xử lý và gửi tài khoản cho bạn.<br>Vui lòng quay lại Telegram.</p>
+    <p style="margin-top:20px;font-size:12px;color:#3a4460">Bạn có thể đóng trang này.</p>
+    </div></body></html>""", 200
+
+@flask_app.route("/topup-success", methods=["GET"])
+def topup_success():
+    return """<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Nạp tiền thành công</title>
+    <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0d1117;color:#fff;}
+    .box{text-align:center;padding:40px;background:#161b22;border-radius:12px;border:1px solid #2ecc8a33;}
+    h1{color:#2ecc8a;font-size:2em;margin-bottom:10px;}p{color:#7a85a3;}</style></head>
+    <body><div class="box"><h1>💰 Nạp tiền thành công!</h1>
+    <p>Tiền đã được cộng vào ví của bạn.<br>Vui lòng quay lại Telegram để kiểm tra.</p>
     <p style="margin-top:20px;font-size:12px;color:#3a4460">Bạn có thể đóng trang này.</p>
     </div></body></html>""", 200
 
@@ -272,22 +349,25 @@ def health():
 # ════════════════════════════════════════════════════
 #                  PAYOS API
 # ════════════════════════════════════════════════════
-async def create_payment_link(order_code: int, amount: int, description: str, buyer_name: str) -> dict:
+async def create_payment_link(order_code: int, amount: int, description: str,
+                               buyer_name: str, return_url: str = None) -> dict:
     description = description[:25]
+    ret_url = return_url or f"{SERVER_URL}/payment-success"
+    cancel_url = f"{SERVER_URL}/payment-cancel"
     payload = {
         "orderCode":   order_code,
         "amount":      amount,
         "description": description,
         "buyerName":   buyer_name,
-        "returnUrl":   f"{SERVER_URL}/payment-success",
-        "cancelUrl":   f"{SERVER_URL}/payment-cancel",
+        "returnUrl":   ret_url,
+        "cancelUrl":   cancel_url,
     }
     sign_str = (
         f"amount={amount}"
-        f"&cancelUrl={payload['cancelUrl']}"
+        f"&cancelUrl={cancel_url}"
         f"&description={description}"
         f"&orderCode={order_code}"
-        f"&returnUrl={payload['returnUrl']}"
+        f"&returnUrl={ret_url}"
     )
     payload["signature"] = hmac.new(
         PAYOS_CHECKSUM.encode(), sign_str.encode(), hashlib.sha256
@@ -323,6 +403,46 @@ async def check_low_stock(pid: str, product: dict):
         )
 
 # ════════════════════════════════════════════════════
+#         XỬ LÝ NẠP VÍ SAU KHI THANH TOÁN  ← MỚI
+# ════════════════════════════════════════════════════
+async def process_topup(topup: dict):
+    """Cộng tiền vào ví người dùng sau khi PayOS xác nhận."""
+    try:
+        chat_id = topup["chat_id"]
+        user_id = topup["user_id"]
+        amount  = topup["amount"]
+        code    = topup["order_code"]
+
+        db = load_db()
+        u  = get_user(db, user_id)
+        u["balance"] += amount
+        save_db(db)
+
+        logger.info(f"✅ Nạp ví {user_id} | +{amount:,}đ | mã {code}")
+
+        await telegram_app.bot.send_message(
+            chat_id,
+            f"✅ <b>Nạp tiền thành công!</b>\n\n"
+            f"🔖 Mã giao dịch: <code>{code}</code>\n"
+            f"💰 Số tiền nạp: <b>+{amount:,}đ</b>\n"
+            f"👛 Số dư ví hiện tại: <b>{u['balance']:,}đ</b>\n\n"
+            f"Cảm ơn bạn đã nạp tiền! 🎉",
+            parse_mode="HTML"
+        )
+        await telegram_app.bot.send_message(
+            ADMIN_ID,
+            f"💰 <b>Nạp ví thành công!</b>\n"
+            f"👤 User ID: {user_id}\n"
+            f"💵 Số tiền: {amount:,}đ\n"
+            f"👛 Số dư mới: {u['balance']:,}đ\n"
+            f"🔖 {code}",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error(f"Lỗi xử lý nạp ví: {e}")
+
+# ════════════════════════════════════════════════════
 #              GỬI TÀI KHOẢN SAU KHI THANH TOÁN
 # ════════════════════════════════════════════════════
 async def send_accounts_to_user(order: dict):
@@ -354,7 +474,6 @@ async def send_accounts_to_user(order: dict):
             acc_text = "\n".join(f"<code>{a}</code>" for a in sent)
             discount_text = f"\n🏷️ Đã giảm: <b>{discount:,}đ</b>" if discount > 0 else ""
 
-            # Lưu đơn hàng
             record = {
                 "code": order_code, "user_id": order["user_id"],
                 "pid": pid, "product_name": product["name"],
@@ -365,7 +484,6 @@ async def send_accounts_to_user(order: dict):
             db["orders"].append(record)
             u["orders"].append(order_code)
 
-            # Dùng voucher
             if voucher and voucher.upper() in db["vouchers"]:
                 v = db["vouchers"][voucher.upper()]
                 if v["uses"] > 0:
@@ -393,7 +511,6 @@ async def send_accounts_to_user(order: dict):
             await check_low_stock(pid, product)
 
         else:
-            # Kho không đủ → thông báo admin xử lý thủ công
             await telegram_app.bot.send_message(
                 chat_id,
                 f"✅ <b>Thanh toán thành công!</b>\n\n"
@@ -469,6 +586,109 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ════════════════════════════════════════════════════
+#      XỬ LÝ NẠP TIỀN VÀO VÍ QUA PAYOS  ← MỚI
+# ════════════════════════════════════════════════════
+async def handle_topup_payos(update: Update, context: ContextTypes.DEFAULT_TYPE, amount: int):
+    """Tạo link PayOS cho việc nạp ví."""
+    user = update.effective_user
+
+    order_code_int = int(time.time() * 1000) % 9999999
+    order_code_str = f"NAP{user.id % 10000:04d}{order_code_int % 10000:04d}"
+    pending_key    = str(order_code_int)
+
+    PENDING_TOPUPS[pending_key] = {
+        "order_code": order_code_str,
+        "user_id":    user.id,
+        "chat_id":    update.message.chat_id,
+        "amount":     amount,
+    }
+    logger.info(f"Tạo đơn nạp ví | key={pending_key} | orderCode={order_code_int} | amount={amount}")
+
+    processing_msg = await update.message.reply_text("⏳ Đang tạo link thanh toán...")
+
+    try:
+        result = await create_payment_link(
+            order_code=order_code_int,
+            amount=amount,
+            description=f"Nap vi {user.id}",
+            buyer_name=user.full_name,
+            return_url=f"{SERVER_URL}/topup-success"
+        )
+
+        if result.get("code") == "00":
+            payment_url = result["data"]["checkoutUrl"]
+            PENDING_TOPUPS[pending_key]["checkout_url"] = payment_url
+
+            caption = (
+                f"💰 <b>Nạp tiền vào ví</b>\n\n"
+                f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n"
+                f"📌 Nội dung chuyển khoản: <code>{order_code_str}</code>\n"
+                f"💵 Số tiền: <b>{amount:,}đ</b>\n"
+                f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
+                f"✅ Bot sẽ tự động cộng tiền vào ví sau khi nhận được."
+            )
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💳 Thanh toán ngay", url=payment_url)],
+                [InlineKeyboardButton("❌ Hủy nạp tiền", callback_data=f"cancel_topup_{pending_key}")]
+            ])
+
+            chat_id_now = update.message.chat_id
+
+            try:
+                await processing_msg.delete()
+            except Exception:
+                pass
+
+            # QR VietQR
+            vietqr_url = (
+                f"https://img.vietqr.io/image/MB-2910036879-compact2.png"
+                f"?amount={amount}"
+                f"&addInfo={order_code_str}"
+                f"&accountName=VO%20THANH%20DAT"
+            )
+
+            sent = None
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(vietqr_url) as resp:
+                        if resp.status == 200:
+                            img_bytes = await resp.read()
+                            sent = await context.bot.send_photo(
+                                chat_id=chat_id_now,
+                                photo=io.BytesIO(img_bytes),
+                                caption=caption,
+                                parse_mode="HTML",
+                                reply_markup=kb
+                            )
+            except Exception as qr_err:
+                logger.warning(f"Lỗi tạo VietQR cho nạp ví: {qr_err}")
+
+            if not sent:
+                sent = await context.bot.send_message(
+                    chat_id=chat_id_now,
+                    text=caption,
+                    parse_mode="HTML",
+                    reply_markup=kb
+                )
+
+            PENDING_TOPUPS[pending_key]["msg_id"] = sent.message_id
+
+            asyncio.create_task(cancel_topup_after_timeout(
+                pending_key, sent.message_id, chat_id_now
+            ))
+
+        else:
+            PENDING_TOPUPS.pop(pending_key, None)
+            await processing_msg.edit_text(
+                f"❌ Lỗi tạo thanh toán: {result.get('desc', 'Không xác định')}"
+            )
+
+    except Exception as e:
+        PENDING_TOPUPS.pop(pending_key, None)
+        logger.error(f"Lỗi tạo PayOS nạp ví: {e}")
+        await processing_msg.edit_text("❌ Lỗi kết nối PayOS. Vui lòng thử lại!")
+
+# ════════════════════════════════════════════════════
 #                   CALLBACK
 # ════════════════════════════════════════════════════
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -476,6 +696,197 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data     = query.data
     products = load_products()
+
+    # ── Nạp tiền ví — chọn mức nhanh ──────────────  ← MỚI
+    if data == "topup_wallet":
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("5,000đ",  callback_data="topup_amount_5000"),
+                InlineKeyboardButton("10,000đ", callback_data="topup_amount_10000"),
+                InlineKeyboardButton("20,000đ", callback_data="topup_amount_20000"),
+            ],
+            [
+                InlineKeyboardButton("50,000đ",  callback_data="topup_amount_50000"),
+                InlineKeyboardButton("100,000đ", callback_data="topup_amount_100000"),
+                InlineKeyboardButton("200,000đ", callback_data="topup_amount_200000"),
+            ],
+            [InlineKeyboardButton("✏️ Nhập số tiền khác", callback_data="topup_custom")],
+            [InlineKeyboardButton("🔙 Quay lại", callback_data="back_wallet")],
+        ])
+        await query.edit_message_text(
+            "💰 <b>Nạp tiền vào ví</b>\n\n"
+            "Chọn mức nạp hoặc nhập số tiền tùy chỉnh:\n"
+            f"<i>(Tối thiểu {MIN_TOPUP:,}đ)</i>",
+            parse_mode="HTML",
+            reply_markup=kb
+        )
+        return
+
+    # ── Nạp tiền — chọn mức cố định ───────────────  ← MỚI
+    if data.startswith("topup_amount_"):
+        amount = int(data.replace("topup_amount_", ""))
+        db     = load_db()
+        u      = get_user(db, query.from_user.id)
+        await query.edit_message_text(
+            f"💰 <b>Xác nhận nạp tiền</b>\n\n"
+            f"💵 Số tiền: <b>{amount:,}đ</b>\n"
+            f"👛 Số dư hiện tại: <b>{u['balance']:,}đ</b>\n"
+            f"📈 Số dư sau nạp: <b>{u['balance'] + amount:,}đ</b>\n\n"
+            f"Xác nhận thanh toán qua PayOS?",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Xác nhận", callback_data=f"topup_confirm_{amount}")],
+                [InlineKeyboardButton("🔙 Chọn lại", callback_data="topup_wallet")],
+            ])
+        )
+        return
+
+    # ── Nạp tiền — nhập tùy chỉnh ─────────────────  ← MỚI
+    if data == "topup_custom":
+        context.user_data["wait_topup_amount"] = True
+        await query.edit_message_text(
+            f"✏️ <b>Nhập số tiền muốn nạp</b>\n\n"
+            f"Tối thiểu: <b>{MIN_TOPUP:,}đ</b>\n\n"
+            f"Nhập số tiền (chỉ nhập số, ví dụ: 30000):",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Quay lại", callback_data="topup_wallet")]
+            ])
+        )
+        return
+
+    # ── Nạp tiền — xác nhận ───────────────────────  ← MỚI
+    if data.startswith("topup_confirm_"):
+        amount = int(data.replace("topup_confirm_", ""))
+        # Tạo một "fake" update.message-like để tái dùng handle_topup_payos
+        context.user_data["topup_amount"] = amount
+        await query.edit_message_text("⏳ Đang tạo link thanh toán...")
+
+        # Tạo đơn PayOS trực tiếp ở đây (vì không có update.message)
+        user           = query.from_user
+        order_code_int = int(time.time() * 1000) % 9999999
+        order_code_str = f"NAP{user.id % 10000:04d}{order_code_int % 10000:04d}"
+        pending_key    = str(order_code_int)
+
+        PENDING_TOPUPS[pending_key] = {
+            "order_code": order_code_str,
+            "user_id":    user.id,
+            "chat_id":    query.message.chat_id,
+            "amount":     amount,
+        }
+
+        try:
+            result = await create_payment_link(
+                order_code=order_code_int,
+                amount=amount,
+                description=f"Nap vi {user.id}",
+                buyer_name=user.full_name,
+                return_url=f"{SERVER_URL}/topup-success"
+            )
+
+            if result.get("code") == "00":
+                payment_url = result["data"]["checkoutUrl"]
+                PENDING_TOPUPS[pending_key]["checkout_url"] = payment_url
+
+                caption = (
+                    f"💰 <b>Nạp tiền vào ví</b>\n\n"
+                    f"🏦 Chuyển khoản tới <b>MB Bank - 2910036879</b>\n"
+                    f"📌 Nội dung chuyển khoản: <code>{order_code_str}</code>\n"
+                    f"💵 Số tiền: <b>{amount:,}đ</b>\n"
+                    f"⏳ Thời gian còn lại: <b>5 phút</b>\n\n"
+                    f"✅ Bot sẽ tự động cộng tiền vào ví sau khi nhận được."
+                )
+                kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💳 Thanh toán ngay", url=payment_url)],
+                    [InlineKeyboardButton("❌ Hủy nạp tiền", callback_data=f"cancel_topup_{pending_key}")]
+                ])
+
+                chat_id_now = query.message.chat_id
+                try:
+                    await query.delete_message()
+                except Exception:
+                    pass
+
+                vietqr_url = (
+                    f"https://img.vietqr.io/image/MB-2910036879-compact2.png"
+                    f"?amount={amount}"
+                    f"&addInfo={order_code_str}"
+                    f"&accountName=VO%20THANH%20DAT"
+                )
+
+                sent = None
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(vietqr_url) as resp:
+                            if resp.status == 200:
+                                img_bytes = await resp.read()
+                                sent = await telegram_app.bot.send_photo(
+                                    chat_id=chat_id_now,
+                                    photo=io.BytesIO(img_bytes),
+                                    caption=caption,
+                                    parse_mode="HTML",
+                                    reply_markup=kb
+                                )
+                except Exception as qr_err:
+                    logger.warning(f"Lỗi VietQR nạp ví: {qr_err}")
+
+                if not sent:
+                    sent = await telegram_app.bot.send_message(
+                        chat_id=chat_id_now,
+                        text=caption,
+                        parse_mode="HTML",
+                        reply_markup=kb
+                    )
+
+                PENDING_TOPUPS[pending_key]["msg_id"] = sent.message_id
+                asyncio.create_task(cancel_topup_after_timeout(
+                    pending_key, sent.message_id, chat_id_now
+                ))
+
+            else:
+                PENDING_TOPUPS.pop(pending_key, None)
+                await query.edit_message_text(
+                    f"❌ Lỗi tạo thanh toán: {result.get('desc', 'Không xác định')}"
+                )
+
+        except Exception as e:
+            PENDING_TOPUPS.pop(pending_key, None)
+            logger.error(f"Lỗi PayOS nạp ví: {e}")
+            await query.edit_message_text("❌ Lỗi kết nối PayOS. Vui lòng thử lại!")
+        return
+
+    # ── Hủy nạp tiền ──────────────────────────────  ← MỚI
+    if data.startswith("cancel_topup_"):
+        key = data[len("cancel_topup_"):]
+        if key in PENDING_TOPUPS:
+            PENDING_TOPUPS.pop(key)
+            try:
+                await query.edit_message_caption(
+                    caption="❌ <b>Đã hủy nạp tiền.</b>\n\nNhấn 👛 Ví → 💰 Nạp tiền để thử lại.",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                await query.edit_message_text(
+                    "❌ <b>Đã hủy nạp tiền.</b>", parse_mode="HTML"
+                )
+        else:
+            await query.answer("Giao dịch không tồn tại hoặc đã xử lý.", show_alert=True)
+        return
+
+    # ── Quay lại màn ví ───────────────────────────  ← MỚI
+    if data == "back_wallet":
+        db = load_db()
+        u  = get_user(db, query.from_user.id)
+        await query.edit_message_text(
+            f"👛 <b>Ví của bạn</b>\n\n"
+            f"💰 Số dư: <b>{u['balance']:,}đ</b>\n\n"
+            f"Để nạp tiền, liên hệ admin: {SUPPORT}",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💰 Nạp tiền qua PayOS", callback_data="topup_wallet")]
+            ])
+        )
+        return
 
     # ── Chọn sản phẩm ──────────────────────────────
     if data.startswith("buy_"):
@@ -497,7 +908,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Chọn hình thức thanh toán ───────────────────
     elif data.startswith("pay_"):
-        parts  = data.split("_")   # pay_payos_sp1_2  hoặc  pay_wallet_sp1_2
+        parts  = data.split("_")
         method = parts[1]
         pid    = parts[2]
         qty    = int(parts[3])
@@ -510,7 +921,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         discount = 0
         voucher  = context.user_data.pop("voucher", "")
 
-        # Áp voucher
         if voucher:
             db = load_db()
             v  = db["vouchers"].get(voucher.upper())
@@ -530,12 +940,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("💳 Thanh toán PayOS", callback_data=f"pay_payos_{pid}_{qty}")],
-                        [InlineKeyboardButton("🔙 Quay lại", callback_data="back_products")],
+                        [InlineKeyboardButton("💰 Nạp tiền vào ví",  callback_data="topup_wallet")],
+                        [InlineKeyboardButton("🔙 Quay lại",          callback_data="back_products")],
                     ])
                 )
                 return
 
-            # Trừ ví
             u["balance"] -= total
             save_db(db)
 
@@ -552,11 +962,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_accounts_to_user(order)
 
         elif method == "payos":
-            # Dùng timestamp đầy đủ, PayOS nhận int, PENDING_ORDERS key = str của int này
-            import random
-            order_code_int = int(time.time()) * 10 + random.randint(0, 9)   # milliseconds để giảm trùng
+            order_code_int = int(time.time() * 1000) % 9999999
             order_code_str = f"RBN{query.from_user.id % 10000:04d}{order_code_int % 10000:04d}"
-            pending_key    = str(order_code_int)   # key dùng nhất quán
+            pending_key    = str(order_code_int)
 
             PENDING_ORDERS[pending_key] = {
                 "order_code": order_code_str,
@@ -573,15 +981,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 result = await create_payment_link(
                     order_code=order_code_int,
                     amount=total,
-                    description=f"{qty}RBN",
+                    description=f"{qty} RBN",
                     buyer_name=query.from_user.full_name
                 )
                 if result.get("code") == "00":
                     payment_url   = result["data"]["checkoutUrl"]
-                    qr_url        = result["data"].get("qrCode", "")
                     discount_text = f"\n🏷️ Giảm giá: <b>{discount:,}đ</b>" if discount > 0 else ""
 
-                    # Lưu checkout_url vào pending order để dùng khi cập nhật
                     PENDING_ORDERS[pending_key]["checkout_url"] = payment_url
 
                     caption = (
@@ -596,17 +1002,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         [InlineKeyboardButton("❌ Hủy đơn", callback_data=f"cancel_{pending_key}")]
                     ])
 
-                    # Lưu chat_id trước khi xóa tin nhắn
                     chat_id_now = query.message.chat_id
-
-                    # Xóa tin nhắn "đang tạo link"
                     try:
                         await query.delete_message()
                     except Exception:
                         pass
 
-                    # Tạo QR bằng VietQR (MB Bank)
-                    # Format: https://img.vietqr.io/image/{bank}-{account}-{template}.png?amount=X&addInfo=Y&accountName=Z
                     vietqr_url = (
                         f"https://img.vietqr.io/image/MB-2910036879-compact2.png"
                         f"?amount={total}"
@@ -620,7 +1021,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             async with session.get(vietqr_url) as resp:
                                 if resp.status == 200:
                                     img_bytes = await resp.read()
-                                    sent = await context.bot.send_photo(
+                                    sent = await telegram_app.bot.send_photo(
                                         chat_id=chat_id_now,
                                         photo=io.BytesIO(img_bytes),
                                         caption=caption,
@@ -631,17 +1032,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         logger.warning(f"Lỗi tạo VietQR: {qr_err}")
 
                     if not sent:
-                        sent = await context.bot.send_message(
+                        sent = await telegram_app.bot.send_message(
                             chat_id=chat_id_now,
                             text=caption,
                             parse_mode="HTML",
                             reply_markup=kb
                         )
 
-                    # Lưu message_id để đếm ngược cập nhật
                     PENDING_ORDERS[pending_key]["msg_id"] = sent.message_id
-
-                    # Chạy đếm ngược async
                     asyncio.create_task(cancel_order_after_timeout(
                         pending_key, sent.message_id, chat_id_now
                     ))
@@ -656,7 +1054,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Lỗi PayOS: {e}")
                 await query.edit_message_text("❌ Lỗi kết nối PayOS. Vui lòng thử lại!")
 
-    # ── Hủy đơn hàng ────────────────────────────────
+    # ── Hủy đơn mua hàng ────────────────────────────
     elif data.startswith("cancel_"):
         key = data[7:]
         if key in PENDING_ORDERS:
@@ -671,7 +1069,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("Đơn hàng không tồn tại hoặc đã được xử lý.", show_alert=True)
 
-    # ── Quay lại ────────────────────────────────────
+    # ── Quay lại danh sách sản phẩm ─────────────────
     elif data == "back_products":
         keyboard = []
         for pid, p in products.items():
@@ -726,14 +1124,17 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         await update.message.reply_text(out, parse_mode="HTML"); return
 
+    # ── Ví — có nút Nạp tiền ────────────────────────  ← CẬP NHẬT
     if text == "👛 Ví":
         db = load_db()
         u  = get_user(db, user.id)
         await update.message.reply_text(
             f"👛 <b>Ví của bạn</b>\n\n"
-            f"💰 Số dư: <b>{u['balance']:,}đ</b>\n\n"
-            f"Để nạp tiền, liên hệ admin: {SUPPORT}",
-            parse_mode="HTML"
+            f"💰 Số dư: <b>{u['balance']:,}đ</b>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💰 Nạp tiền qua PayOS", callback_data="topup_wallet")]
+            ])
         ); return
 
     if text == "💬 Hỗ trợ":
@@ -744,7 +1145,40 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         ); return
 
-    # ── Nhập số lượng ───────────────────────────────
+    # ── Nhập số tiền nạp tùy chỉnh ─────────────────  ← MỚI
+    if context.user_data.get("wait_topup_amount"):
+        context.user_data["wait_topup_amount"] = False
+        raw = text.replace(",", "").replace(".", "").strip()
+        if not raw.isdigit():
+            await update.message.reply_text(
+                f"❌ Vui lòng nhập số hợp lệ (ví dụ: 50000)\nTối thiểu {MIN_TOPUP:,}đ"
+            )
+            return
+        amount = int(raw)
+        if amount < MIN_TOPUP:
+            await update.message.reply_text(
+                f"❌ Số tiền nạp tối thiểu là <b>{MIN_TOPUP:,}đ</b>",
+                parse_mode="HTML"
+            )
+            return
+
+        db = load_db()
+        u  = get_user(db, user.id)
+        await update.message.reply_text(
+            f"💰 <b>Xác nhận nạp tiền</b>\n\n"
+            f"💵 Số tiền: <b>{amount:,}đ</b>\n"
+            f"👛 Số dư hiện tại: <b>{u['balance']:,}đ</b>\n"
+            f"📈 Số dư sau nạp: <b>{u['balance'] + amount:,}đ</b>\n\n"
+            f"Xác nhận thanh toán qua PayOS?",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Xác nhận nạp tiền", callback_data=f"topup_confirm_{amount}")],
+                [InlineKeyboardButton("🔙 Hủy", callback_data="topup_wallet")],
+            ])
+        )
+        return
+
+    # ── Nhập số lượng sản phẩm ──────────────────────
     if context.user_data.get("wait_qty"):
         pid = context.user_data.get("pid")
         products = load_products()
@@ -765,7 +1199,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["wait_qty"] = False
         context.user_data["qty"]      = qty
 
-        # Bỏ qua voucher, chuyển thẳng sang thanh toán
         total = p["price"] * qty
         await ask_payment_method(update, pid, qty, total, 0, "")
         return
@@ -783,7 +1216,7 @@ async def ask_payment_method(update, pid, qty, total, discount, voucher):
     p = products.get(pid)
     discount_text = f"\n🏷️ Giảm giá: <b>-{discount:,}đ</b>" if discount > 0 else ""
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Thanh toán PayOS (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
+        [InlineKeyboardButton("💳 Thanh toán (tự động)", callback_data=f"pay_payos_{pid}_{qty}")],
         [InlineKeyboardButton("👛 Dùng số dư ví",              callback_data=f"pay_wallet_{pid}_{qty}")],
         [InlineKeyboardButton("🔙 Quay lại",                   callback_data="back_products")],
     ])
@@ -800,7 +1233,6 @@ async def ask_payment_method(update, pid, qty, total, discount, voucher):
 #               LỆNH ADMIN
 # ════════════════════════════════════════════════════
 
-# /addacc sp1 user1|pass1 user2|pass2 ...
 async def cmd_addacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Không có quyền!"); return
@@ -846,7 +1278,6 @@ async def cmd_addacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode="HTML")
     await check_low_stock(pid, products[pid])
 
-# Upload file .txt — caption = pid
 async def cmd_addacc_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Không có quyền!"); return
@@ -898,7 +1329,6 @@ async def cmd_addacc_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await check_low_stock(pid, products[pid])
 
-# /stock
 async def cmd_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     products = load_products()
@@ -908,7 +1338,6 @@ async def cmd_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{icon} [{pid}] {p['name']}\n   💰 {p['pd']} | 📦 {p['stock']} acc\n\n"
     await update.message.reply_text(text, parse_mode="HTML")
 
-# /napvi user_id so_tien
 async def cmd_napvi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Không có quyền!"); return
@@ -938,7 +1367,6 @@ async def cmd_napvi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-# /addvoucher CODE % lần
 async def cmd_addvoucher(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Không có quyền!"); return
@@ -958,7 +1386,6 @@ async def cmd_addvoucher(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-# /vouchers
 async def cmd_vouchers(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     db = load_db()
@@ -970,7 +1397,6 @@ async def cmd_vouchers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text  += f"{status} <code>{code}</code> — {v['percent']}% — còn {v['uses']} lượt\n"
     await update.message.reply_text(text, parse_mode="HTML")
 
-# /orders
 async def cmd_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     db = load_db()
@@ -986,7 +1412,6 @@ async def cmd_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     await update.message.reply_text(text, parse_mode="HTML")
 
-# /help
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     await update.message.reply_text(
@@ -995,7 +1420,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<i>Gửi file .txt + caption = pid</i>              — Import hàng loạt\n"
         "/stock                                         — Xem kho\n"
         "/orders                                        — 10 đơn gần nhất\n"
-        "/napvi &lt;user_id&gt; &lt;tiền&gt;                    — Nạp ví\n"
+        "/napvi &lt;user_id&gt; &lt;tiền&gt;                    — Nạp ví thủ công\n"
         "/addvoucher &lt;CODE&gt; &lt;%&gt; &lt;lần&gt;              — Tạo voucher\n"
         "/vouchers                                      — Xem voucher",
         parse_mode="HTML"
@@ -1015,7 +1440,6 @@ def main():
 
     telegram_app = Application.builder().token(BOT_TOKEN).build()
 
-    # Lệnh
     telegram_app.add_handler(CommandHandler("start",       start))
     telegram_app.add_handler(CommandHandler("addacc",      cmd_addacc))
     telegram_app.add_handler(CommandHandler("stock",       cmd_stock))
@@ -1025,18 +1449,13 @@ def main():
     telegram_app.add_handler(CommandHandler("orders",      cmd_orders))
     telegram_app.add_handler(CommandHandler("help",        cmd_help))
 
-    # File .txt upload
     telegram_app.add_handler(MessageHandler(filters.Document.TXT, cmd_addacc_file))
-
-    # Callback & text
     telegram_app.add_handler(CallbackQueryHandler(callback_handler))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
 
-    # Lấy đúng event loop mà run_polling sẽ dùng
     bot_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(bot_loop)
 
-    # Khởi động Flask sau khi có loop
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     logger.info("✅ Flask đang chạy trên port 8080")
