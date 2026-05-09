@@ -1217,6 +1217,35 @@ async def ask_payment_method(update, pid, qty, total, discount, voucher):
 #               LỆNH ADMIN
 # ════════════════════════════════════════════════════
 
+async def notify_buyers_on_restock(pid: str, product: dict, added_count: int):
+    """Gửi thông báo đến tất cả user đã từng mua sản phẩm này khi hàng được thêm vào kho."""
+    try:
+        db = load_db()
+        notified = set()
+        for order in db.get("orders", []):
+            if order.get("pid") != pid:
+                continue
+            uid = order.get("user_id")
+            if uid and str(uid) not in notified:
+                notified.add(str(uid))
+                try:
+                    await telegram_app.bot.send_message(
+                        chat_id=int(uid),
+                        text=(
+                            f"🔔 <b>Hàng mới vừa về!</b>\n\n"
+                            f"📦 <b>{product['name']}</b>\n"
+                            f"➕ Đã thêm: <b>{added_count} tài khoản</b>\n"
+                            f"📊 Còn lại: <b>{product['stock']} tài khoản</b>\n\n"
+                            f"Nhấn 🛒 <b>Mua hàng</b> để đặt ngay!"
+                        ),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+        logger.info(f"Đã thông báo restock [{pid}] đến {len(notified)} user.")
+    except Exception as e:
+        logger.error(f"Lỗi notify_buyers_on_restock: {e}")
+
 async def cmd_addacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Không có quyền!"); return
@@ -1261,6 +1290,8 @@ async def cmd_addacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"\n⚠️ Bỏ qua {len(skipped)} acc trùng"
     await update.message.reply_text(text, parse_mode="HTML")
     await check_low_stock(pid, products[pid])
+    if added:
+        await notify_buyers_on_restock(pid, products[pid], len(added))
 
 async def cmd_addacc_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1312,6 +1343,8 @@ async def cmd_addacc_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
     await check_low_stock(pid, products[pid])
+    if added:
+        await notify_buyers_on_restock(pid, products[pid], len(added))
 
 async def cmd_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
