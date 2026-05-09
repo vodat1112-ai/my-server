@@ -572,7 +572,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 result = await create_payment_link(
                     order_code=order_code_int,
                     amount=total,
-                    description=order_code_str,
+                    description=f"{qty}RBN",
                     buyer_name=query.from_user.full_name
                 )
                 if result.get("code") == "00":
