@@ -646,7 +646,7 @@ async def handle_topup_payos(update: Update, context: ContextTypes.DEFAULT_TYPE,
         result = await create_payment_link(
             order_code=order_code_int,
             amount=amount,
-            description=f"Nap vi {user.id}",
+            description=f"{user.id}",
             buyer_name=user.full_name,
             return_url=f"{SERVER_URL}/topup-success"
         )
@@ -742,7 +742,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💵 Số tiền: <b>{amount:,}đ</b>\n"
             f"👛 Số dư hiện tại: <b>{u['balance']:,}đ</b>\n"
             f"📈 Số dư sau nạp: <b>{u['balance'] + amount:,}đ</b>\n\n"
-            f"Xác nhận thanh toán qua PayOS?",
+            f"Xác nhận thanh toán",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Xác nhận", callback_data=f"topup_confirm_{amount}")],
@@ -880,7 +880,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Để nạp tiền, liên hệ admin: {SUPPORT}",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("💰 Nạp tiền qua PayOS", callback_data="topup_wallet")]
+                [InlineKeyboardButton("💰 Nạp tiền ngay", callback_data="topup_wallet")]
             ])
         )
         return
@@ -936,7 +936,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"📉 Thiếu: <b>{total - u['balance']:,}đ</b>",
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("💳 Thanh toán", callback_data=f"pay_payos_{pid}_{qty}")],
+                        [InlineKeyboardButton("💳 Thanh toán ngay", callback_data=f"pay_payos_{pid}_{qty}")],
                         [InlineKeyboardButton("💰 Nạp tiền vào ví",  callback_data="topup_wallet")],
                         [InlineKeyboardButton("🔙 Quay lại",          callback_data="back_products")],
                     ])
