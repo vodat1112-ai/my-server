@@ -1452,12 +1452,23 @@ def run_flask():
 # ════════════════════════════════════════════════════
 #                     MAIN
 # ════════════════════════════════════════════════════
+async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    await update.message.reply_text(
+        f"🪪 <b>Thông tin tài khoản của bạn:</b>\n\n"
+        f"👤 Tên: <b>{user.full_name}</b>\n"
+        f"🆔 User ID: <code>{user.id}</code>\n\n"
+        f"<i>Gửi ID này cho admin khi cần hỗ trợ.</i>",
+        parse_mode="HTML"
+    )
+
 def main():
     global telegram_app, bot_loop
 
     telegram_app = Application.builder().token(BOT_TOKEN).build()
 
     telegram_app.add_handler(CommandHandler("start",       start))
+    telegram_app.add_handler(CommandHandler("myid",        cmd_myid))
     telegram_app.add_handler(CommandHandler("addacc",      cmd_addacc))
     telegram_app.add_handler(CommandHandler("stock",       cmd_stock))
     telegram_app.add_handler(CommandHandler("napvi",       cmd_napvi))
