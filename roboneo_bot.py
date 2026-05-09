@@ -590,9 +590,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"🎉 Chào mừng <b>{user.first_name}</b> đến với cửa hàng!\n\n"
-        "- Hướng dẫn sử dụng Roboneo: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n"
+        "Hướng dẫn sử dụng Roboneo: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n"
         "📌 <b>Hướng dẫn:</b>\n"
-        "- Roboneo có thể tạo cùng lúc nhiều video.\n"
         "1. Nhấn 🛒 <b>Mua hàng</b> → chọn sản phẩm\n"
         "2. Nhập số lượng cần mua\n"
         "3. Nhập mã giảm giá (nếu có)\n"
@@ -1134,7 +1133,8 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "📖 Hướng dẫn":
         await update.message.reply_text(
             f"📖 <b>Hướng dẫn sử dụng</b>\n\n"
-            "Hướng dẫn chi tiết: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n\n"
+            "- Hướng dẫn chi tiết: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n\n"
+            "- Có thể tạo nhiều video cùng lúc.\n"
             "📌 <b>Các bước mua hàng:</b>\n"
             "1. Nhấn 🛒 <b>Mua hàng</b> → chọn sản phẩm\n"
             "2. Nhập số lượng cần mua\n"
@@ -1170,7 +1170,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💵 Số tiền: <b>{amount:,}đ</b>\n"
             f"👛 Số dư hiện tại: <b>{u['balance']:,}đ</b>\n"
             f"📈 Số dư sau nạp: <b>{u['balance'] + amount:,}đ</b>\n\n"
-            f"Xác nhận thanh toán qua PayOS?",
+            f"Xác nhận thanh toán",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Xác nhận nạp tiền", callback_data=f"topup_confirm_{amount}")],
@@ -1239,6 +1239,9 @@ async def notify_buyers_on_restock(pid: str, product: dict, added_count: int):
     try:
         db = load_db()
         notified = set()
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛒 Mua ngay", callback_data=f"buy_{pid}")]
+        ])
         for order in db.get("orders", []):
             if order.get("pid") != pid:
                 continue
@@ -1251,17 +1254,55 @@ async def notify_buyers_on_restock(pid: str, product: dict, added_count: int):
                         text=(
                             f"🔔 <b>Hàng mới vừa về!</b>\n\n"
                             f"📦 <b>{product['name']}</b>\n"
-                            f"➕ Đã thêm: <b>{added_count} tài khoản</b>\n"
-                            f"📊 Còn lại: <b>{product['stock']} tài khoản</b>\n\n"
-                            f"Nhấn 🛒 <b>Mua hàng</b> để đặt ngay!"
+                            f"➕ Thêm: <b>{added_count}</b>\n"
+                            f"📦 Tồn kho hiện tại: <b>{product['stock']}</b>"
                         ),
-                        parse_mode="HTML"
+                        parse_mode="HTML",
+                        reply_markup=kb
                     )
                 except Exception:
                     pass
         logger.info(f"Đã thông báo restock [{pid}] đến {len(notified)} user.")
     except Exception as e:
         logger.error(f"Lỗi notify_buyers_on_restock: {e}")
+
+async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gửi tin nhắn broadcast đến tất cả user."""
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Không có quyền!"); return
+    if not context.args:
+        await update.message.reply_text(
+            "Cú pháp: /broadcast &lt;nội dung&gt;\nVí dụ: /broadcast 🎉 Shop có khuyến mãi hôm nay!",
+            parse_mode="HTML"
+        ); return
+
+    msg = " ".join(context.args)
+    db  = load_db()
+    all_users = list(db.get("users", {}).keys())
+
+    if not all_users:
+        await update.message.reply_text("⚠️ Chưa có user nào trong hệ thống."); return
+
+    await update.message.reply_text(f"📤 Đang gửi đến {len(all_users)} user...")
+
+    success, failed = 0, 0
+    for uid in all_users:
+        try:
+            await telegram_app.bot.send_message(
+                chat_id=int(uid),
+                text=f"📢 <b>Thông báo từ cửa hàng</b>\n\n{msg}",
+                parse_mode="HTML"
+            )
+            success += 1
+        except Exception:
+            failed += 1
+
+    await update.message.reply_text(
+        f"✅ Broadcast hoàn tất!\n"
+        f"📨 Thành công: <b>{success}</b>\n"
+        f"❌ Thất bại: <b>{failed}</b>",
+        parse_mode="HTML"
+    )
 
 async def cmd_addacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1456,7 +1497,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/orders                                        — 10 đơn gần nhất\n"
         "/napvi &lt;user_id&gt; &lt;tiền&gt;                    — Nạp ví thủ công\n"
         "/addvoucher &lt;CODE&gt; &lt;%&gt; &lt;lần&gt;              — Tạo voucher\n"
-        "/vouchers                                      — Xem voucher",
+        "/vouchers                                      — Xem voucher\n"
+        "/broadcast &lt;nội dung&gt;                       — Gửi thông báo tất cả user",
         parse_mode="HTML"
     )
 
@@ -1493,6 +1535,7 @@ def main():
     telegram_app.add_handler(CommandHandler("vouchers",    cmd_vouchers))
     telegram_app.add_handler(CommandHandler("orders",      cmd_orders))
     telegram_app.add_handler(CommandHandler("help",        cmd_help))
+    telegram_app.add_handler(CommandHandler("broadcast",   cmd_broadcast))
 
     telegram_app.add_handler(MessageHandler(filters.Document.TXT, cmd_addacc_file))
     telegram_app.add_handler(CallbackQueryHandler(callback_handler))
