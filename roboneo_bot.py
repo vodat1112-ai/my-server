@@ -68,7 +68,7 @@ DEFAULT_PRODUCTS = {
     },
     "sp3": {
         "name": "Fotor AI 200+ Credits",
-        "price": 6500, "pd": "6k5", "stock": 0, "accounts": [],
+        "price": 8000, "pd": "8k", "stock": 0, "accounts": [],
         "sold": 0,
         "note": "",
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
