@@ -30,7 +30,7 @@ import aiohttp
 # ════════════════════════════════════════════════════
 #                    CẤU HÌNH
 # ════════════════════════════════════════════════════
-BOT_TOKEN  = "8620998717:AAE7P-MimVeUMB1lG29T10MXe7gGqQtzOw8"
+BOT_TOKEN  = "8635281196:AAHnPRQfF7VKKaeMFg1yttU4E7nFotf5q-s"
 ADMIN_ID   = 7131184806
 SUPPORT    = "@min_gows"          # 👈 Thay username hỗ trợ
 
