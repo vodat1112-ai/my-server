@@ -32,7 +32,7 @@ import aiohttp
 # ════════════════════════════════════════════════════
 BOT_TOKEN  = "8620998717:AAE7P-MimVeUMB1lG29T10MXe7gGqQtzOw8"
 ADMIN_ID   = 7131184806
-SUPPORT    = "@your_support"          # 👈 Thay username hỗ trợ
+SUPPORT    = "@min_gows"          # 👈 Thay username hỗ trợ
 
 PAYOS_CLIENT_ID = "13f08821-7d23-45a0-9ab5-c02c59fb337c"
 PAYOS_API_KEY   = "7682b6e5-d570-48da-8347-1e2175f8a8dd"
@@ -53,28 +53,38 @@ DB_FILE       = "data.json"
 
 DEFAULT_PRODUCTS = {
     "sp1": {
-        "name": "Roboneo tài khoản 120-140🥕",
-        "price": 1000, "pd": "1k", "stock": 0, "accounts": [],
+        "name": "FOTOR AI 110+ Credits",
+        "price": 4000, "pd": "4k", "stock": 0, "accounts": [],
+        "sold": 0,          # ← MỚI: đếm số đã bán
+        "note": "",         # ← MỚI: ghi chú sản phẩm
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
     },
     "sp2": {
-        "name": "Roboneo tài khoản 170-190🥕",
-        "price": 2000, "pd": "2k", "stock": 0, "accounts": [],
+        "name": "Fotor AI 150+ Credits",
+        "price": 6500, "pd": "6k5", "stock": 0, "accounts": [],
+        "sold": 0,
+        "note": "",
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
     },
     "sp3": {
-        "name": "Roboneo tài khoản 220-240🥕",
-        "price": 2500, "pd": "2k5", "stock": 0, "accounts": [],
+        "name": "Fotor AI 200+ Credits",
+        "price": 6500, "pd": "6k5", "stock": 0, "accounts": [],
+        "sold": 0,
+        "note": "",
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
     },
     "sp4": {
-        "name": "Roboneo tài khoản 270-290🥕",
-        "price": 3000, "pd": "3k", "stock": 0, "accounts": [],
+        "name": "Chatgpt Plus 1 Tháng (KBH)",
+        "price": 29000, "pd": "29K", "stock": 0, "accounts": [],
+        "sold": 0,
+        "note": "",
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
     },
     "sp5": {
-        "name": "Fotor AI 110+ Credits",
-        "price": 4000, "pd": "4k", "stock": 0, "accounts": [],
+        "name": "Capcut Pro Team 35Day (BHF)",
+        "price": 19000, "pd": "19K", "stock": 0, "accounts": [],
+        "sold": 0,
+        "note": "",
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
     },
 }
@@ -87,7 +97,20 @@ def load_products():
         with open(PRODUCTS_FILE, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_PRODUCTS, f, ensure_ascii=False, indent=2)
     with open(PRODUCTS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    # Migration: thêm field sold/note nếu sản phẩm cũ chưa có
+    changed = False
+    for pid, p in data.items():
+        if "sold" not in p:
+            p["sold"] = 0
+            changed = True
+        if "note" not in p:
+            p["note"] = ""
+            changed = True
+    if changed:
+        with open(PRODUCTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    return data
 
 def save_products(products):
     with open(PRODUCTS_FILE, "w", encoding="utf-8") as f:
@@ -110,6 +133,24 @@ def get_user(db, user_id):
     if uid not in db["users"]:
         db["users"][uid] = {"balance": 0, "orders": [], "name": ""}
     return db["users"][uid]
+
+def next_product_id(products: dict) -> str:
+    """Tự động tạo ID sản phẩm tiếp theo dạng sp1, sp2, ..."""
+    existing_nums = []
+    for pid in products:
+        if pid.startswith("sp") and pid[2:].isdigit():
+            existing_nums.append(int(pid[2:]))
+    next_num = max(existing_nums, default=0) + 1
+    return f"sp{next_num}"
+
+def default_msg_template() -> str:
+    return (
+        "🛒 <b>Xác nhận đơn hàng</b>\n\n"
+        "📦 Sản phẩm: <b>{name}</b>\n"
+        "💰 Giá: <b>{price}</b>/tài khoản\n"
+        "📊 Còn lại: <b>{stock} tài khoản</b>\n\n"
+        "✏️ Nhập số lượng cần mua (tối đa {stock}):"
+    )
 
 # ════════════════════════════════════════════════════
 #                   LOGGING
@@ -138,21 +179,18 @@ STOCK_LOCK = threading.Lock()
 #          KIỂM TRA GIỚI HẠN PENDING MỖI USER
 # ════════════════════════════════════════════════════
 def get_user_pending_orders(user_id: int) -> list:
-    """Trả về danh sách đơn MUA HÀNG đang chờ của user."""
     return [
         (key, o) for key, o in PENDING_ORDERS.items()
         if o["user_id"] == user_id
     ]
 
 def get_user_pending_topups(user_id: int) -> list:
-    """Trả về danh sách đơn NẠP VÍ đang chờ của user."""
     return [
         (key, t) for key, t in PENDING_TOPUPS.items()
         if t["user_id"] == user_id
     ]
 
 def format_pending_orders_text(pending: list) -> str:
-    """Tạo text hiển thị các đơn mua đang chờ."""
     lines_out = []
     for key, o in pending:
         lines_out.append(
@@ -162,7 +200,6 @@ def format_pending_orders_text(pending: list) -> str:
     return "\n".join(lines_out)
 
 def format_pending_topups_text(pending: list) -> str:
-    """Tạo text hiển thị các đơn nạp đang chờ."""
     lines_out = []
     for key, t in pending:
         lines_out.append(
@@ -176,7 +213,6 @@ def format_pending_topups_text(pending: list) -> str:
 #         HỦY ĐƠN SAU TIMEOUT + ĐỒNG HỒ ĐẾM NGƯỢC
 # ════════════════════════════════════════════════════
 async def cancel_order_after_timeout(pending_key: str, msg_id: int, chat_id: int):
-    """Đếm ngược 5 phút cho đơn MUA HÀNG."""
     key = pending_key
     for remaining in [240, 180, 120, 60]:
         await asyncio.sleep(60)
@@ -225,11 +261,7 @@ async def cancel_order_after_timeout(pending_key: str, msg_id: int, chat_id: int
         pass
 
 
-# ════════════════════════════════════════════════════
-#   HỦY ĐƠN NẠP VI SAU TIMEOUT + ĐẾM NGƯỢC  ← MỚI
-# ════════════════════════════════════════════════════
 async def cancel_topup_after_timeout(pending_key: str, msg_id: int, chat_id: int):
-    """Đếm ngược 5 phút cho đơn NẠP VÍ."""
     key = pending_key
     for remaining in [240, 180, 120, 60]:
         await asyncio.sleep(60)
@@ -291,7 +323,6 @@ def verify_payos_signature(data: dict, signature: str) -> bool:
     )
     expected = hmac.new(PAYOS_CHECKSUM.encode(), sorted_data.encode(), hashlib.sha256).hexdigest()
     logger.info(f"PayOS sig check | expected={expected} | got={signature}")
-    # KHÔNG cho qua khi signature rỗng — tránh bị giả mạo webhook
     if not signature:
         return False
     return hmac.compare_digest(expected, signature)
@@ -320,7 +351,6 @@ def payos_webhook():
         is_paid = (code == "00") or (status == "PAID")
 
         if is_paid:
-            # ── Kiểm tra đơn MUA HÀNG ──────────────────
             order = PENDING_ORDERS.pop(order_code, None)
             if order:
                 logger.info(f"✅ Đơn mua hàng {order_code} — đang giao hàng...")
@@ -332,7 +362,6 @@ def payos_webhook():
                     logger.error("❌ bot_loop chưa sẵn sàng!")
                 return jsonify({"success": True}), 200
 
-            # ── Kiểm tra đơn NẠP VÍ ────────────────────
             topup = PENDING_TOPUPS.pop(order_code, None)
             if topup:
                 logger.info(f"✅ Đơn nạp ví {order_code} — đang cộng tiền...")
@@ -449,10 +478,9 @@ async def check_low_stock(pid: str, product: dict):
         )
 
 # ════════════════════════════════════════════════════
-#         XỬ LÝ NẠP VÍ SAU KHI THANH TOÁN  ← MỚI
+#         XỬ LÝ NẠP VÍ SAU KHI THANH TOÁN
 # ════════════════════════════════════════════════════
 async def process_topup(topup: dict):
-    """Cộng tiền vào ví người dùng sau khi PayOS xác nhận."""
     try:
         chat_id = topup["chat_id"]
         user_id = topup["user_id"]
@@ -502,7 +530,6 @@ async def send_accounts_to_user(order: dict):
         method   = order.get("method", "payos")
         voucher  = order.get("voucher", "")
 
-        # ── STOCK_LOCK: tránh 2 đơn cùng lúc lấy trùng tài khoản ──
         sent       = None
         product    = None
         order_code = order.get("order_code", f"RBN{int(time.time())}")
@@ -523,6 +550,8 @@ async def send_accounts_to_user(order: dict):
                 sent = product["accounts"][:qty]
                 product["accounts"] = product["accounts"][qty:]
                 product["stock"]    = len(product["accounts"])
+                # ← MỚI: cộng số đã bán
+                product["sold"]     = product.get("sold", 0) + qty
                 save_products(products)
 
                 acc_text      = "\n".join(f"<code>{a}</code>" for a in sent)
@@ -543,7 +572,6 @@ async def send_accounts_to_user(order: dict):
                     if v["uses"] > 0:
                         v["uses"] -= 1
                 save_db(db)
-        # ── Hết STOCK_LOCK — gửi Telegram ngoài lock để không block ──
 
         if sent:
             await telegram_app.bot.send_message(
@@ -567,7 +595,6 @@ async def send_accounts_to_user(order: dict):
             await check_low_stock(pid, product)
 
         else:
-            # Kho hết — hoàn tiền nếu thanh toán bằng ví
             if method == "wallet":
                 with STOCK_LOCK:
                     db_refund = load_db()
@@ -662,10 +689,9 @@ async def show_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ════════════════════════════════════════════════════
-#      XỬ LÝ NẠP TIỀN VÀO VÍ QUA PAYOS  ← MỚI
+#      XỬ LÝ NẠP TIỀN VÀO VÍ QUA PAYOS
 # ════════════════════════════════════════════════════
 async def handle_topup_payos(update: Update, context: ContextTypes.DEFAULT_TYPE, amount: int):
-    """Tạo link PayOS cho việc nạp ví."""
     user = update.effective_user
 
     order_code_int = int(time.time()) * 1000 + secrets.randbelow(1000)
@@ -714,7 +740,6 @@ async def handle_topup_payos(update: Update, context: ContextTypes.DEFAULT_TYPE,
             except Exception:
                 pass
 
-
             sent = await context.bot.send_message(
                 chat_id=chat_id_now,
                 text=caption,
@@ -748,7 +773,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data     = query.data
     products = load_products()
 
-    # ── Nạp tiền ví — chọn mức nhanh ──────────────  ← MỚI
+    # ── Nạp tiền ví — chọn mức nhanh ──────────────
     if data == "topup_wallet":
         kb = InlineKeyboardMarkup([
             [
@@ -773,7 +798,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Nạp tiền — chọn mức cố định ───────────────  ← MỚI
+    # ── Nạp tiền — chọn mức cố định ───────────────
     if data.startswith("topup_amount_"):
         amount = int(data.replace("topup_amount_", ""))
         db     = load_db()
@@ -792,7 +817,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Nạp tiền — nhập tùy chỉnh ─────────────────  ← MỚI
+    # ── Nạp tiền — nhập tùy chỉnh ─────────────────
     if data == "topup_custom":
         context.user_data["wait_topup_amount"] = True
         await query.edit_message_text(
@@ -806,11 +831,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Nạp tiền — xác nhận ───────────────────────  ← MỚI
+    # ── Nạp tiền — xác nhận ───────────────────────
     if data.startswith("topup_confirm_"):
         amount = int(data.replace("topup_confirm_", ""))
-        # Tạo một "fake" update.message-like để tái dùng handle_topup_payos
-        # ── Kiểm tra giới hạn đơn nạp ví pending ────────
         user_pending_topups = get_user_pending_topups(query.from_user.id)
         if len(user_pending_topups) >= MAX_PENDING_TOPUPS:
             pending_info = format_pending_topups_text(user_pending_topups)
@@ -825,7 +848,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["topup_amount"] = amount
         await query.edit_message_text("⏳ Đang tạo link thanh toán...")
 
-        # Tạo đơn PayOS trực tiếp ở đây (vì không có update.message)
         user           = query.from_user
         order_code_int = int(time.time()) * 1000 + secrets.randbelow(1000)
         order_code_int = order_code_int % 999999999 + 1
@@ -869,7 +891,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception:
                     pass
 
-
                 sent = await telegram_app.bot.send_message(
                     chat_id=chat_id_now,
                     text=caption,
@@ -894,7 +915,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Lỗi kết nối PayOS. Vui lòng thử lại!")
         return
 
-    # ── Hủy nạp tiền ──────────────────────────────  ← MỚI
+    # ── Hủy nạp tiền ──────────────────────────────
     if data.startswith("cancel_topup_"):
         key = data[len("cancel_topup_"):]
         if key in PENDING_TOPUPS:
@@ -912,7 +933,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Giao dịch không tồn tại hoặc đã xử lý.", show_alert=True)
         return
 
-    # ── Quay lại màn ví ───────────────────────────  ← MỚI
+    # ── Quay lại màn ví ───────────────────────────
     if data == "back_wallet":
         db = load_db()
         u  = get_user(db, query.from_user.id)
@@ -942,6 +963,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["wait_qty"] = True
 
         msg = (p.get("msg") or "").replace("{name}", p["name"]).replace("{price}", p["pd"]).replace("{stock}", str(p["stock"]))
+
+        # ← MỚI: thêm ghi chú vào tin nhắn chọn sản phẩm nếu có
+        note = p.get("note", "").strip()
+        if note:
+            msg += f"\n\n📝 <b>Ghi chú:</b>\n{note}"
+
         kb  = [[InlineKeyboardButton("🔙 Quay lại", callback_data="back_products")]]
         await query.edit_message_text(msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
 
@@ -952,7 +979,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pid    = parts[2]
         qty_raw = int(parts[3])
 
-        # Validate pid và qty từ server-side (context.user_data) — không tin callback_data
         trusted_pid = context.user_data.get("pid")
         trusted_qty = context.user_data.get("qty")
         if trusted_pid != pid or trusted_qty != qty_raw:
@@ -966,7 +992,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Lỗi đơn hàng.")
             return
 
-        # Validate qty không vượt tồn kho thực tế
         if qty < 1 or qty > p["stock"]:
             await query.edit_message_text(
                 f"❌ Số lượng không hợp lệ (kho còn {p['stock']}).\nVui lòng tạo đơn mới."
@@ -1003,13 +1028,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            # ── STOCK_LOCK: kiểm tra kho và trừ tiền nguyên tử ──
             with STOCK_LOCK:
-                # Re-load để có dữ liệu mới nhất trong lock
                 db = load_db()
                 u  = get_user(db, query.from_user.id)
                 if u["balance"] < total:
-                    # Trường hợp số dư vừa thay đổi trước khi vào lock
                     await query.edit_message_text(
                         f"❌ <b>Số dư không đủ!</b>\n\n"
                         f"💰 Số dư ví: <b>{u['balance']:,}đ</b>\n"
@@ -1033,11 +1055,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_accounts_to_user(order)
 
         elif method == "payos":
-            # Dùng secrets để tránh trùng order_code khi 2 user tạo đơn cùng lúc
             order_code_int = int(time.time()) * 1000 + secrets.randbelow(1000)
-            # Giới hạn trong phạm vi PayOS cho phép (max 9 chữ số)
             order_code_int = order_code_int % 999999999 + 1
-            # ── Kiểm tra giới hạn đơn pending mỗi user ──────
             user_pending_orders = get_user_pending_orders(query.from_user.id)
             if len(user_pending_orders) >= MAX_PENDING_ORDERS:
                 pending_info = format_pending_orders_text(user_pending_orders)
@@ -1091,7 +1110,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await query.delete_message()
                     except Exception:
                         pass
-
 
                     sent = await telegram_app.bot.send_message(
                         chat_id=chat_id_now,
@@ -1185,7 +1203,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         await update.message.reply_text(out, parse_mode="HTML"); return
 
-    # ── Ví — có nút Nạp tiền ────────────────────────  ← CẬP NHẬT
     if text == "👛 Ví":
         db = load_db()
         u  = get_user(db, user.id)
@@ -1222,7 +1239,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         ); return
 
-    # ── Nhập số tiền nạp tùy chỉnh ─────────────────  ← MỚI
+    # ── Nhập số tiền nạp tùy chỉnh ─────────────────
     if context.user_data.get("wait_topup_amount"):
         context.user_data["wait_topup_amount"] = False
         raw = text.replace(",", "").replace(".", "").strip()
@@ -1311,7 +1328,6 @@ async def ask_payment_method(update, pid, qty, total, discount, voucher):
 # ════════════════════════════════════════════════════
 
 async def notify_buyers_on_restock(pid: str, product: dict, added_count: int):
-    """Gửi thông báo đến tất cả user đã từng mua sản phẩm này khi hàng được thêm vào kho."""
     try:
         db = load_db()
         notified = set()
@@ -1343,7 +1359,6 @@ async def notify_buyers_on_restock(pid: str, product: dict, added_count: int):
         logger.error(f"Lỗi notify_buyers_on_restock: {e}")
 
 async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gửi tin nhắn broadcast đến tất cả user."""
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Không có quyền!"); return
     if not context.args:
@@ -1379,6 +1394,278 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"❌ Thất bại: <b>{failed}</b>",
         parse_mode="HTML"
     )
+
+# ════════════════════════════════════════════════════
+#  ← MỚI: /addsp — Thêm sản phẩm mới
+#  Cú pháp: /addsp <Tên Sản Phẩm> | <Giá> | <Giá hiển thị>
+#  Ví dụ:   /addsp Capcut Pro 35D | 10000 | 10K
+# ════════════════════════════════════════════════════
+async def cmd_addsp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Không có quyền!"); return
+
+    raw = " ".join(context.args).strip()
+    if not raw or "|" not in raw:
+        await update.message.reply_text(
+            "📌 <b>Cú pháp:</b>\n"
+            "<code>/addsp Tên Sản Phẩm | Giá | Giá hiển thị</code>\n\n"
+            "Ví dụ:\n"
+            "<code>/addsp Capcut Pro Team 35D | 10000 | 10K</code>\n\n"
+            "• <b>Giá</b>: số nguyên (đơn vị đồng)\n"
+            "• <b>Giá hiển thị</b>: văn bản tùy ý (vd: 10K, 29.000đ)\n"
+            "• ID sản phẩm sẽ được tự động tạo (sp6, sp7, ...)",
+            parse_mode="HTML"
+        ); return
+
+    parts = [p.strip() for p in raw.split("|")]
+    if len(parts) < 3:
+        await update.message.reply_text(
+            "❌ Thiếu thông tin! Cần đủ 3 phần cách nhau bởi <code>|</code>\n"
+            "Ví dụ: <code>/addsp Capcut Pro | 10000 | 10K</code>",
+            parse_mode="HTML"
+        ); return
+
+    name   = parts[0].strip()
+    pd_str = parts[2].strip()
+
+    if not parts[1].strip().isdigit():
+        await update.message.reply_text(
+            f"❌ Giá phải là số nguyên, nhận được: <code>{parts[1]}</code>",
+            parse_mode="HTML"
+        ); return
+
+    price = int(parts[1].strip())
+
+    if not name:
+        await update.message.reply_text("❌ Tên sản phẩm không được để trống!"); return
+    if price <= 0:
+        await update.message.reply_text("❌ Giá phải lớn hơn 0!"); return
+
+    products = load_products()
+    new_pid  = next_product_id(products)
+
+    products[new_pid] = {
+        "name":     name,
+        "price":    price,
+        "pd":       pd_str,
+        "stock":    0,
+        "accounts": [],
+        "sold":     0,
+        "note":     "",
+        "msg":      default_msg_template()
+    }
+    save_products(products)
+
+    await update.message.reply_text(
+        f"✅ <b>Đã thêm sản phẩm mới!</b>\n\n"
+        f"🆔 ID: <code>{new_pid}</code>\n"
+        f"📦 Tên: <b>{name}</b>\n"
+        f"💰 Giá: <b>{price:,}đ</b> ({pd_str})\n"
+        f"📊 Kho: <b>0 tài khoản</b>\n\n"
+        f"Thêm tài khoản vào kho:\n"
+        f"<code>/addacc {new_pid} user|pass</code>",
+        parse_mode="HTML"
+    )
+
+# ════════════════════════════════════════════════════
+#  ← MỚI: /xoasp — Xóa sản phẩm
+#  Cú pháp: /xoasp <pid>
+# ════════════════════════════════════════════════════
+async def cmd_xoasp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Không có quyền!"); return
+
+    if not context.args:
+        products = load_products()
+        lines = ["🗑️ <b>Xóa sản phẩm</b>\n\nCú pháp: <code>/xoasp &lt;pid&gt;</code>\n"]
+        for pid, p in products.items():
+            lines.append(f"• <code>/xoasp {pid}</code> — {p['name']} (kho: {p['stock']})")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+        return
+
+    pid = context.args[0].lower().strip()
+    products = load_products()
+
+    if pid not in products:
+        await update.message.reply_text(
+            f"❌ Không tìm thấy sản phẩm <code>{pid}</code>\n"
+            f"ID hiện có: {', '.join(f'<code>{k}</code>' for k in products.keys())}",
+            parse_mode="HTML"
+        ); return
+
+    p = products[pid]
+    # Xác nhận nếu còn hàng trong kho
+    if p["stock"] > 0:
+        context.user_data[f"confirm_delete_{pid}"] = True
+        await update.message.reply_text(
+            f"⚠️ <b>Xác nhận xóa sản phẩm?</b>\n\n"
+            f"📦 <b>{p['name']}</b>\n"
+            f"📊 Còn lại <b>{p['stock']} tài khoản</b> trong kho!\n\n"
+            f"Nhập lại lệnh để xác nhận:\n"
+            f"<code>/xoasp {pid} confirm</code>",
+            parse_mode="HTML"
+        ); return
+
+    # Nếu arg thứ 2 là "confirm" hoặc kho trống → xóa luôn
+    if len(context.args) >= 2 and context.args[1].lower() == "confirm" or p["stock"] == 0:
+        name = p["name"]
+        del products[pid]
+        save_products(products)
+        await update.message.reply_text(
+            f"🗑️ <b>Đã xóa sản phẩm!</b>\n\n"
+            f"🆔 ID: <code>{pid}</code>\n"
+            f"📦 Tên: {name}",
+            parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(
+            f"⚠️ Sản phẩm còn hàng. Thêm <code>confirm</code> để xóa:\n"
+            f"<code>/xoasp {pid} confirm</code>",
+            parse_mode="HTML"
+        )
+
+# ════════════════════════════════════════════════════
+#  ← MỚI: /ghichu — Thêm/xem/xóa ghi chú sản phẩm
+#  Cú pháp: /ghichu <pid> <nội dung ghi chú>
+#           /ghichu <pid>          → xem ghi chú hiện tại
+#           /ghichu <pid> xoa      → xóa ghi chú
+# ════════════════════════════════════════════════════
+async def cmd_ghichu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Không có quyền!"); return
+
+    products = load_products()
+
+    if not context.args:
+        lines = ["📝 <b>Ghi chú sản phẩm</b>\n\n"]
+        lines.append("<b>Cú pháp:</b>")
+        lines.append("• Xem ghi chú: <code>/ghichu &lt;pid&gt;</code>")
+        lines.append("• Đặt ghi chú: <code>/ghichu &lt;pid&gt; &lt;nội dung&gt;</code>")
+        lines.append("• Xóa ghi chú: <code>/ghichu &lt;pid&gt; xoa</code>\n")
+        lines.append("<b>Sản phẩm hiện có:</b>")
+        for pid, p in products.items():
+            note_preview = f"✏️ {p.get('note','')[:30]}..." if p.get("note") else "_(trống)_"
+            lines.append(f"• <code>{pid}</code> — {p['name']}\n  {note_preview}")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+        return
+
+    pid = context.args[0].lower().strip()
+    if pid not in products:
+        await update.message.reply_text(
+            f"❌ Không tìm thấy sản phẩm <code>{pid}</code>\n"
+            f"ID hiện có: {', '.join(f'<code>{k}</code>' for k in products.keys())}",
+            parse_mode="HTML"
+        ); return
+
+    p = products[pid]
+
+    # Chỉ xem ghi chú
+    if len(context.args) == 1:
+        note = p.get("note", "").strip()
+        if note:
+            await update.message.reply_text(
+                f"📝 <b>Ghi chú [{pid}] {p['name']}:</b>\n\n{note}",
+                parse_mode="HTML"
+            )
+        else:
+            await update.message.reply_text(
+                f"📝 <b>[{pid}] {p['name']}</b> chưa có ghi chú.\n\n"
+                f"Đặt ghi chú: <code>/ghichu {pid} Nội dung ghi chú</code>",
+                parse_mode="HTML"
+            )
+        return
+
+    # Xóa ghi chú
+    remaining = " ".join(context.args[1:]).strip()
+    if remaining.lower() in ("xoa", "xóa", "delete", "clear"):
+        p["note"] = ""
+        save_products(products)
+        await update.message.reply_text(
+            f"🗑️ <b>Đã xóa ghi chú</b> của [{pid}] {p['name']}",
+            parse_mode="HTML"
+        ); return
+
+    # Đặt ghi chú mới
+    p["note"] = remaining
+    save_products(products)
+    await update.message.reply_text(
+        f"✅ <b>Đã cập nhật ghi chú!</b>\n\n"
+        f"📦 [{pid}] <b>{p['name']}</b>\n\n"
+        f"📝 <b>Ghi chú:</b>\n{remaining}",
+        parse_mode="HTML"
+    )
+
+# ════════════════════════════════════════════════════
+#  ← MỚI: /suasp — Sửa tên/giá/giá hiển thị sản phẩm
+#  Cú pháp: /suasp <pid> ten <tên mới>
+#           /suasp <pid> gia <giá mới>
+#           /suasp <pid> hienthi <giá hiển thị mới>
+# ════════════════════════════════════════════════════
+async def cmd_suasp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Không có quyền!"); return
+
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "📌 <b>Cú pháp sửa sản phẩm:</b>\n\n"
+            "• Sửa tên: <code>/suasp &lt;pid&gt; ten &lt;tên mới&gt;</code>\n"
+            "• Sửa giá: <code>/suasp &lt;pid&gt; gia &lt;giá mới&gt;</code>\n"
+            "• Sửa hiển thị: <code>/suasp &lt;pid&gt; hienthi &lt;giá hiển thị&gt;</code>\n\n"
+            "Ví dụ:\n"
+            "<code>/suasp sp1 ten Fotor AI Pro 200 Credits</code>\n"
+            "<code>/suasp sp1 gia 8000</code>\n"
+            "<code>/suasp sp1 hienthi 8K</code>",
+            parse_mode="HTML"
+        ); return
+
+    pid   = context.args[0].lower().strip()
+    field = context.args[1].lower().strip()
+    value = " ".join(context.args[2:]).strip()
+
+    products = load_products()
+    if pid not in products:
+        await update.message.reply_text(
+            f"❌ Không tìm thấy <code>{pid}</code>",
+            parse_mode="HTML"
+        ); return
+
+    p = products[pid]
+
+    if field in ("ten", "tên", "name"):
+        old = p["name"]
+        p["name"] = value
+        save_products(products)
+        await update.message.reply_text(
+            f"✅ Đã đổi tên sản phẩm <code>{pid}</code>\n"
+            f"• Cũ: {old}\n• Mới: <b>{value}</b>",
+            parse_mode="HTML"
+        )
+    elif field in ("gia", "giá", "price"):
+        if not value.isdigit():
+            await update.message.reply_text("❌ Giá phải là số nguyên!"); return
+        old = p["price"]
+        p["price"] = int(value)
+        save_products(products)
+        await update.message.reply_text(
+            f"✅ Đã đổi giá sản phẩm <code>{pid}</code>\n"
+            f"• Cũ: {old:,}đ\n• Mới: <b>{int(value):,}đ</b>",
+            parse_mode="HTML"
+        )
+    elif field in ("hienthi", "hiển thị", "pd", "display"):
+        old = p["pd"]
+        p["pd"] = value
+        save_products(products)
+        await update.message.reply_text(
+            f"✅ Đã đổi giá hiển thị sản phẩm <code>{pid}</code>\n"
+            f"• Cũ: {old}\n• Mới: <b>{value}</b>",
+            parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Trường không hợp lệ: <code>{field}</code>\n"
+            f"Dùng: <code>ten</code> | <code>gia</code> | <code>hienthi</code>",
+            parse_mode="HTML"
+        )
 
 async def cmd_addacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -1486,17 +1773,20 @@ async def cmd_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "📊 <b>Tình trạng kho:</b>\n\n"
     for pid, p in products.items():
         icon = "✅" if p["stock"] > LOW_STOCK_THRESHOLD else ("⚠️" if p["stock"] > 0 else "❌")
-        text += f"{icon} [{pid}] {p['name']}\n   💰 {p['pd']} | 📦 {p['stock']} acc\n\n"
+        # ← MỚI: hiện thêm cột đã bán
+        sold = p.get("sold", 0)
+        text += (
+            f"{icon} [{pid}] {p['name']}\n"
+            f"   💰 {p['pd']} | 📦 {p['stock']} acc | 🛒 Đã bán: {sold}\n\n"
+        )
     await update.message.reply_text(text, parse_mode="HTML")
 
 async def cmd_viewacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Xem chi tiết tài khoản còn trong kho — chỉ admin, tin nhắn tự xóa sau 60 giây."""
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Không có quyền!"); return
 
     products = load_products()
 
-    # Không có arg → hiện tổng quan tất cả sản phẩm để chọn
     if not context.args:
         lines = ["🔑 <b>Xem tài khoản trong kho</b>\n\nCú pháp: <code>/viewacc &lt;pid&gt;</code>\n"]
         for pid, p in products.items():
@@ -1523,7 +1813,6 @@ async def cmd_viewacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Chia thành từng chunk 50 acc để tránh vượt giới hạn tin nhắn Telegram
     CHUNK = 50
     total = len(accounts)
     chunks = [accounts[i:i+CHUNK] for i in range(0, total, CHUNK)]
@@ -1546,13 +1835,11 @@ async def cmd_viewacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         sent_msgs.append(msg)
 
-    # Xóa lệnh gốc của admin ngay lập tức (nếu được)
     try:
         await update.message.delete()
     except Exception:
         pass
 
-    # Tự xóa tất cả tin nhắn sau 60 giây
     async def delete_after_delay():
         await asyncio.sleep(60)
         for m in sent_msgs:
@@ -1644,16 +1931,26 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
     await update.message.reply_text(
         "🛠️ <b>Lệnh Admin:</b>\n\n"
-        "/addacc &lt;pid&gt; &lt;user|pass&gt; [user|pass ...]  — Thêm 1 hoặc nhiều acc\n"
-        "<i>Gửi file .txt + caption = pid</i>              — Import hàng loạt\n"
-        "/stock                                         — Xem kho (số lượng)\n"
-        "/viewacc &lt;pid&gt;                              — Xem chi tiết acc trong kho (tự xóa 60s)\n"
-        "/orders                                        — 10 đơn gần nhất\n"
-        "/napvi &lt;user_id&gt; &lt;tiền&gt;                    — Nạp ví thủ công\n"
-        "/addvoucher &lt;CODE&gt; &lt;%&gt; &lt;lần&gt;              — Tạo voucher\n"
-        "/vouchers                                      — Xem voucher\n"
-        "/broadcast &lt;nội dung&gt;                     — Gửi thông báo tất cả user\n"
-        "/thongbao &lt;nội dung&gt;                       — (tương tự /broadcast)",
+        "<b>─── Quản lý sản phẩm ───</b>\n"
+        "/addsp &lt;Tên&gt; | &lt;Giá&gt; | &lt;Hiển thị&gt;          — Thêm sản phẩm mới\n"
+        "/suasp &lt;pid&gt; ten/gia/hienthi &lt;giá trị&gt;    — Sửa sản phẩm\n"
+        "/xoasp &lt;pid&gt;                             — Xóa sản phẩm\n"
+        "/ghichu &lt;pid&gt; &lt;nội dung&gt;                — Đặt ghi chú sản phẩm\n"
+        "/ghichu &lt;pid&gt;                             — Xem ghi chú\n"
+        "/ghichu &lt;pid&gt; xoa                        — Xóa ghi chú\n\n"
+        "<b>─── Quản lý kho ───</b>\n"
+        "/addacc &lt;pid&gt; &lt;user|pass&gt; [...]          — Thêm acc\n"
+        "<i>Gửi file .txt + caption = pid</i>           — Import hàng loạt\n"
+        "/stock                                     — Xem kho + đã bán\n"
+        "/viewacc &lt;pid&gt;                            — Xem chi tiết acc (tự xóa 60s)\n\n"
+        "<b>─── Đơn hàng & Tài chính ───</b>\n"
+        "/orders                                    — 10 đơn gần nhất\n"
+        "/napvi &lt;user_id&gt; &lt;tiền&gt;                  — Nạp ví thủ công\n"
+        "/addvoucher &lt;CODE&gt; &lt;%&gt; &lt;lần&gt;            — Tạo voucher\n"
+        "/vouchers                                  — Xem voucher\n\n"
+        "<b>─── Broadcast ───</b>\n"
+        "/broadcast &lt;nội dung&gt;                   — Gửi thông báo tất cả user\n"
+        "/thongbao &lt;nội dung&gt;                     — (tương tự /broadcast)",
         parse_mode="HTML"
     )
 
@@ -1692,7 +1989,13 @@ def main():
     telegram_app.add_handler(CommandHandler("orders",      cmd_orders))
     telegram_app.add_handler(CommandHandler("help",        cmd_help))
     telegram_app.add_handler(CommandHandler("broadcast",   cmd_broadcast))
-    telegram_app.add_handler(CommandHandler("thongbao",    cmd_broadcast))  # alias
+    telegram_app.add_handler(CommandHandler("thongbao",    cmd_broadcast))
+
+    # ← MỚI: đăng ký lệnh admin mới
+    telegram_app.add_handler(CommandHandler("addsp",       cmd_addsp))
+    telegram_app.add_handler(CommandHandler("xoasp",       cmd_xoasp))
+    telegram_app.add_handler(CommandHandler("ghichu",      cmd_ghichu))
+    telegram_app.add_handler(CommandHandler("suasp",       cmd_suasp))
 
     telegram_app.add_handler(MessageHandler(filters.Document.TXT, cmd_addacc_file))
     telegram_app.add_handler(CallbackQueryHandler(callback_handler))
