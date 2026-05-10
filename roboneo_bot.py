@@ -14,6 +14,7 @@ import threading
 import time
 import json
 import os
+import secrets
 from datetime import datetime
 from flask import Flask, request, jsonify
 from telegram import (
@@ -124,6 +125,9 @@ logger = logging.getLogger(__name__)
 PENDING_ORDERS = {}   # order_code -> order dict
 PENDING_TOPUPS = {}   # order_code -> topup dict
 PAYMENT_TIMEOUT = 300  # 5 phút = 300 giây
+
+# Lock bảo vệ đọc/ghi kho — tránh race condition khi 2 khách mua cùng lúc
+STOCK_LOCK = threading.Lock()
 
 # ════════════════════════════════════════════════════
 #          KIỂM TRA GIỚI HẠN PENDING MỖI USER
@@ -282,8 +286,9 @@ def verify_payos_signature(data: dict, signature: str) -> bool:
     )
     expected = hmac.new(PAYOS_CHECKSUM.encode(), sorted_data.encode(), hashlib.sha256).hexdigest()
     logger.info(f"PayOS sig check | expected={expected} | got={signature}")
+    # KHÔNG cho qua khi signature rỗng — tránh bị giả mạo webhook
     if not signature:
-        return True
+        return False
     return hmac.compare_digest(expected, signature)
 
 @flask_app.route("/payos-webhook", methods=["POST"])
@@ -449,10 +454,11 @@ async def process_topup(topup: dict):
         amount  = topup["amount"]
         code    = topup["order_code"]
 
-        db = load_db()
-        u  = get_user(db, user_id)
-        u["balance"] += amount
-        save_db(db)
+        with STOCK_LOCK:
+            db = load_db()
+            u  = get_user(db, user_id)
+            u["balance"] += amount
+            save_db(db)
 
         logger.info(f"✅ Nạp ví {user_id} | +{amount:,}đ | mã {code}")
 
@@ -491,41 +497,50 @@ async def send_accounts_to_user(order: dict):
         method   = order.get("method", "payos")
         voucher  = order.get("voucher", "")
 
-        products = load_products()
-        product  = products.get(pid)
-        if not product:
-            return
-
-        db = load_db()
-        u  = get_user(db, order["user_id"])
-
+        # ── STOCK_LOCK: tránh 2 đơn cùng lúc lấy trùng tài khoản ──
+        sent       = None
+        product    = None
         order_code = order.get("order_code", f"RBN{int(time.time())}")
+        acc_text   = ""
+        discount_text = ""
+        record     = None
 
-        if len(product["accounts"]) >= qty:
-            sent = product["accounts"][:qty]
-            product["accounts"] = product["accounts"][qty:]
-            product["stock"]    = len(product["accounts"])
-            save_products(products)
+        with STOCK_LOCK:
+            products = load_products()
+            product  = products.get(pid)
+            if not product:
+                return
 
-            acc_text = "\n".join(f"<code>{a}</code>" for a in sent)
-            discount_text = f"\n🏷️ Đã giảm: <b>{discount:,}đ</b>" if discount > 0 else ""
+            db = load_db()
+            u  = get_user(db, order["user_id"])
 
-            record = {
-                "code": order_code, "user_id": order["user_id"],
-                "pid": pid, "product_name": product["name"],
-                "qty": qty, "total": total, "discount": discount,
-                "method": method, "status": "done",
-                "time": datetime.now().strftime("%H:%M %d/%m/%Y")
-            }
-            db["orders"].append(record)
-            u["orders"].append(order_code)
+            if len(product["accounts"]) >= qty:
+                sent = product["accounts"][:qty]
+                product["accounts"] = product["accounts"][qty:]
+                product["stock"]    = len(product["accounts"])
+                save_products(products)
 
-            if voucher and voucher.upper() in db["vouchers"]:
-                v = db["vouchers"][voucher.upper()]
-                if v["uses"] > 0:
-                    v["uses"] -= 1
-            save_db(db)
+                acc_text      = "\n".join(f"<code>{a}</code>" for a in sent)
+                discount_text = f"\n🏷️ Đã giảm: <b>{discount:,}đ</b>" if discount > 0 else ""
 
+                record = {
+                    "code": order_code, "user_id": order["user_id"],
+                    "pid": pid, "product_name": product["name"],
+                    "qty": qty, "total": total, "discount": discount,
+                    "method": method, "status": "done",
+                    "time": datetime.now().strftime("%H:%M %d/%m/%Y")
+                }
+                db["orders"].append(record)
+                u["orders"].append(order_code)
+
+                if voucher and voucher.upper() in db["vouchers"]:
+                    v = db["vouchers"][voucher.upper()]
+                    if v["uses"] > 0:
+                        v["uses"] -= 1
+                save_db(db)
+        # ── Hết STOCK_LOCK — gửi Telegram ngoài lock để không block ──
+
+        if sent:
             await telegram_app.bot.send_message(
                 chat_id,
                 f"✅ <b>Thanh toán thành công!</b>\n\n"
@@ -547,19 +562,38 @@ async def send_accounts_to_user(order: dict):
             await check_low_stock(pid, product)
 
         else:
-            await telegram_app.bot.send_message(
-                chat_id,
-                f"✅ <b>Thanh toán thành công!</b>\n\n"
-                f"📦 {product['name']} x{qty}\n"
-                f"🔔 Admin sẽ gửi tài khoản sớm nhất. Liên hệ: {SUPPORT}",
-                parse_mode="HTML"
-            )
+            # Kho hết — hoàn tiền nếu thanh toán bằng ví
+            if method == "wallet":
+                with STOCK_LOCK:
+                    db_refund = load_db()
+                    u_refund  = get_user(db_refund, order["user_id"])
+                    u_refund["balance"] += total
+                    save_db(db_refund)
+                logger.info(f"Hoàn tiền ví {order['user_id']} | +{total:,}đ | kho hết [{pid}]")
+                await telegram_app.bot.send_message(
+                    chat_id,
+                    f"⚠️ <b>Thanh toán thành công nhưng kho vừa hết!</b>\n\n"
+                    f"💰 <b>{total:,}đ</b> đã được hoàn lại vào ví của bạn.\n"
+                    f"📦 {product['name']} x{qty}\n\n"
+                    f"Vui lòng thử lại sau khi hàng được bổ sung. Liên hệ: {SUPPORT}",
+                    parse_mode="HTML"
+                )
+            else:
+                await telegram_app.bot.send_message(
+                    chat_id,
+                    f"✅ <b>Thanh toán thành công!</b>\n\n"
+                    f"📦 {product['name']} x{qty}\n"
+                    f"🔔 Admin sẽ gửi tài khoản sớm nhất. Liên hệ: {SUPPORT}",
+                    parse_mode="HTML"
+                )
             await telegram_app.bot.send_message(
                 ADMIN_ID,
                 f"⚠️ <b>Đơn cần xử lý thủ công!</b>\n"
                 f"👤 User ID: {order['user_id']}\n"
                 f"📦 {product['name']} x{qty}\n"
-                f"💰 {total:,}đ\n❗ Kho không đủ!",
+                f"💰 {total:,}đ\n"
+                f"💳 Phương thức: {method}\n"
+                f"❗ Kho không đủ!{' (Đã hoàn tiền ví)' if method == 'wallet' else ''}",
                 parse_mode="HTML"
             )
 
@@ -629,7 +663,8 @@ async def handle_topup_payos(update: Update, context: ContextTypes.DEFAULT_TYPE,
     """Tạo link PayOS cho việc nạp ví."""
     user = update.effective_user
 
-    order_code_int = int(time.time() * 1000) % 9999999
+    order_code_int = int(time.time()) * 1000 + secrets.randbelow(1000)
+    order_code_int = order_code_int % 999999999 + 1
     order_code_str = f"NAP{user.id % 10000:04d}{order_code_int % 10000:04d}"
     pending_key    = str(order_code_int)
 
@@ -787,7 +822,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Tạo đơn PayOS trực tiếp ở đây (vì không có update.message)
         user           = query.from_user
-        order_code_int = int(time.time() * 1000) % 9999999
+        order_code_int = int(time.time()) * 1000 + secrets.randbelow(1000)
+        order_code_int = order_code_int % 999999999 + 1
         order_code_str = f"NAP{user.id % 10000:04d}{order_code_int % 10000:04d}"
         pending_key    = str(order_code_int)
 
@@ -909,10 +945,28 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts  = data.split("_")
         method = parts[1]
         pid    = parts[2]
-        qty    = int(parts[3])
-        p      = products.get(pid)
+        qty_raw = int(parts[3])
+
+        # Validate pid và qty từ server-side (context.user_data) — không tin callback_data
+        trusted_pid = context.user_data.get("pid")
+        trusted_qty = context.user_data.get("qty")
+        if trusted_pid != pid or trusted_qty != qty_raw:
+            await query.edit_message_text("❌ Phiên mua hàng không hợp lệ. Vui lòng chọn lại sản phẩm.")
+            context.user_data.clear()
+            return
+
+        qty = trusted_qty
+        p   = products.get(pid)
         if not p:
             await query.edit_message_text("❌ Lỗi đơn hàng.")
+            return
+
+        # Validate qty không vượt tồn kho thực tế
+        if qty < 1 or qty > p["stock"]:
+            await query.edit_message_text(
+                f"❌ Số lượng không hợp lệ (kho còn {p['stock']}).\nVui lòng tạo đơn mới."
+            )
+            context.user_data.clear()
             return
 
         total    = p["price"] * qty
@@ -944,8 +998,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            u["balance"] -= total
-            save_db(db)
+            # ── STOCK_LOCK: kiểm tra kho và trừ tiền nguyên tử ──
+            with STOCK_LOCK:
+                # Re-load để có dữ liệu mới nhất trong lock
+                db = load_db()
+                u  = get_user(db, query.from_user.id)
+                if u["balance"] < total:
+                    # Trường hợp số dư vừa thay đổi trước khi vào lock
+                    await query.edit_message_text(
+                        f"❌ <b>Số dư không đủ!</b>\n\n"
+                        f"💰 Số dư ví: <b>{u['balance']:,}đ</b>\n"
+                        f"💵 Cần thanh toán: <b>{total:,}đ</b>",
+                        parse_mode="HTML"
+                    )
+                    return
+                u["balance"] -= total
+                save_db(db)
 
             order_code = f"RBN{query.from_user.id % 10000:04d}{len(db['orders'])+1:04d}"
             order = {
@@ -960,7 +1028,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_accounts_to_user(order)
 
         elif method == "payos":
-            order_code_int = int(time.time() * 1000) % 9999999
+            # Dùng secrets để tránh trùng order_code khi 2 user tạo đơn cùng lúc
+            order_code_int = int(time.time()) * 1000 + secrets.randbelow(1000)
+            # Giới hạn trong phạm vi PayOS cho phép (max 9 chữ số)
+            order_code_int = order_code_int % 999999999 + 1
             # ── Kiểm tra giới hạn đơn pending mỗi user ──────
             user_pending_orders = get_user_pending_orders(query.from_user.id)
             if len(user_pending_orders) >= MAX_PENDING_ORDERS:
@@ -1421,10 +1492,12 @@ async def cmd_napvi(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     uid    = str(context.args[0])
     amount = int(context.args[1])
-    db     = load_db()
-    u      = get_user(db, uid)
-    u["balance"] += amount
-    save_db(db)
+
+    with STOCK_LOCK:
+        db = load_db()
+        u  = get_user(db, uid)
+        u["balance"] += amount
+        save_db(db)
 
     await update.message.reply_text(
         f"✅ Đã nạp <b>{amount:,}đ</b> vào ví user {uid}\n"
