@@ -1225,8 +1225,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "📖 Hướng dẫn":
         await update.message.reply_text(
             f"📖 <b>Hướng dẫn sử dụng</b>\n\n"
-            "- Hướng dẫn chi tiết: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n\n"
-            "- Có thể tạo nhiều video cùng lúc.\n"
             "📌 <b>Các bước mua hàng:</b>\n"
             "1. Nhấn 🛒 <b>Mua hàng</b> → chọn sản phẩm\n"
             "2. Nhập số lượng cần mua\n"
