@@ -72,6 +72,11 @@ DEFAULT_PRODUCTS = {
         "price": 3000, "pd": "3k", "stock": 0, "accounts": [],
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
     },
+    "sp5": {
+        "name": "Fotor AI 110+ Credits",
+        "price": 4000, "pd": "4k", "stock": 0, "accounts": [],
+        "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
+    },
 }
 
 # ════════════════════════════════════════════════════
@@ -1205,7 +1210,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"📖 <b>Hướng dẫn sử dụng</b>\n\n"
             "- Hướng dẫn chi tiết: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n\n"
-            "- Trang web đăng nhập: https://www.roboneo.com/\n"
             "- Có thể tạo nhiều video cùng lúc.\n"
             "📌 <b>Các bước mua hàng:</b>\n"
             "1. Nhấn 🛒 <b>Mua hàng</b> → chọn sản phẩm\n"
@@ -1485,6 +1489,81 @@ async def cmd_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{icon} [{pid}] {p['name']}\n   💰 {p['pd']} | 📦 {p['stock']} acc\n\n"
     await update.message.reply_text(text, parse_mode="HTML")
 
+async def cmd_viewacc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Xem chi tiết tài khoản còn trong kho — chỉ admin, tin nhắn tự xóa sau 60 giây."""
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Không có quyền!"); return
+
+    products = load_products()
+
+    # Không có arg → hiện tổng quan tất cả sản phẩm để chọn
+    if not context.args:
+        lines = ["🔑 <b>Xem tài khoản trong kho</b>\n\nCú pháp: <code>/viewacc &lt;pid&gt;</code>\n"]
+        for pid, p in products.items():
+            icon = "✅" if p["stock"] > LOW_STOCK_THRESHOLD else ("⚠️" if p["stock"] > 0 else "❌")
+            lines.append(f"{icon} <code>/viewacc {pid}</code> — {p['name']} ({p['stock']} acc)")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+        return
+
+    pid = context.args[0].lower()
+    if pid not in products:
+        await update.message.reply_text(
+            f"❌ Không tìm thấy <b>{pid}</b>\nID hiện có: {', '.join(products.keys())}",
+            parse_mode="HTML"
+        )
+        return
+
+    p = products[pid]
+    accounts = p["accounts"]
+
+    if not accounts:
+        await update.message.reply_text(
+            f"❌ <b>[{pid}] {p['name']}</b>\n\nKho trống, chưa có tài khoản nào.",
+            parse_mode="HTML"
+        )
+        return
+
+    # Chia thành từng chunk 50 acc để tránh vượt giới hạn tin nhắn Telegram
+    CHUNK = 50
+    total = len(accounts)
+    chunks = [accounts[i:i+CHUNK] for i in range(0, total, CHUNK)]
+
+    sent_msgs = []
+    for idx, chunk in enumerate(chunks):
+        header = (
+            f"🔑 <b>[{pid}] {p['name']}</b>\n"
+            f"📦 Còn <b>{total}</b> tài khoản"
+            + (f" — Trang {idx+1}/{len(chunks)}" if len(chunks) > 1 else "")
+            + "\n⚠️ <i>Tin nhắn tự xóa sau 60 giây</i>\n\n"
+        )
+        acc_lines = "\n".join(
+            f"{i+1+idx*CHUNK}. <code>{acc}</code>"
+            for i, acc in enumerate(chunk)
+        )
+        msg = await update.message.reply_text(
+            header + acc_lines,
+            parse_mode="HTML"
+        )
+        sent_msgs.append(msg)
+
+    # Xóa lệnh gốc của admin ngay lập tức (nếu được)
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
+
+    # Tự xóa tất cả tin nhắn sau 60 giây
+    async def delete_after_delay():
+        await asyncio.sleep(60)
+        for m in sent_msgs:
+            try:
+                await m.delete()
+            except Exception:
+                pass
+
+    asyncio.create_task(delete_after_delay())
+
+
 async def cmd_napvi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Không có quyền!"); return
@@ -1567,12 +1646,14 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🛠️ <b>Lệnh Admin:</b>\n\n"
         "/addacc &lt;pid&gt; &lt;user|pass&gt; [user|pass ...]  — Thêm 1 hoặc nhiều acc\n"
         "<i>Gửi file .txt + caption = pid</i>              — Import hàng loạt\n"
-        "/stock                                         — Xem kho\n"
+        "/stock                                         — Xem kho (số lượng)\n"
+        "/viewacc &lt;pid&gt;                              — Xem chi tiết acc trong kho (tự xóa 60s)\n"
         "/orders                                        — 10 đơn gần nhất\n"
         "/napvi &lt;user_id&gt; &lt;tiền&gt;                    — Nạp ví thủ công\n"
         "/addvoucher &lt;CODE&gt; &lt;%&gt; &lt;lần&gt;              — Tạo voucher\n"
         "/vouchers                                      — Xem voucher\n"
-        "/thongbao &lt;nội dung&gt;                       — Gửi thông báo tất cả user",
+        "/broadcast &lt;nội dung&gt;                     — Gửi thông báo tất cả user\n"
+        "/thongbao &lt;nội dung&gt;                       — (tương tự /broadcast)",
         parse_mode="HTML"
     )
 
@@ -1604,12 +1685,14 @@ def main():
     telegram_app.add_handler(CommandHandler("myid",        cmd_myid))
     telegram_app.add_handler(CommandHandler("addacc",      cmd_addacc))
     telegram_app.add_handler(CommandHandler("stock",       cmd_stock))
+    telegram_app.add_handler(CommandHandler("viewacc",     cmd_viewacc))
     telegram_app.add_handler(CommandHandler("napvi",       cmd_napvi))
     telegram_app.add_handler(CommandHandler("addvoucher",  cmd_addvoucher))
     telegram_app.add_handler(CommandHandler("vouchers",    cmd_vouchers))
     telegram_app.add_handler(CommandHandler("orders",      cmd_orders))
     telegram_app.add_handler(CommandHandler("help",        cmd_help))
     telegram_app.add_handler(CommandHandler("broadcast",   cmd_broadcast))
+    telegram_app.add_handler(CommandHandler("thongbao",    cmd_broadcast))  # alias
 
     telegram_app.add_handler(MessageHandler(filters.Document.TXT, cmd_addacc_file))
     telegram_app.add_handler(CallbackQueryHandler(callback_handler))
