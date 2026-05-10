@@ -656,7 +656,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"🎉 Chào mừng <b>{user.first_name}</b> đến với cửa hàng!\n\n"
-        "Hướng dẫn sử dụng Roboneo: https://docs.google.com/document/d/1tJ3buVmKXF2MobGoBdeE3n_HwfxyrwQg/edit?usp=drive_link&ouid=114797070754633372255&rtpof=true&sd=true\n"
         "📌 <b>Hướng dẫn:</b>\n"
         "1. Nhấn 🛒 <b>Mua hàng</b> → chọn sản phẩm\n"
         "2. Nhập số lượng cần mua\n"
