@@ -19,7 +19,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton
+    ReplyKeyboardMarkup, KeyboardButton, BotCommand
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -83,6 +83,13 @@ DEFAULT_PRODUCTS = {
     "sp5": {
         "name": "Capcut Pro Team 35Day (BHF)",
         "price": 19000, "pd": "19K", "stock": 0, "accounts": [],
+        "sold": 0,
+        "note": "",
+        "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
+    },
+    "sp6": {
+        "name": "Kling AI 66 Credits (KBH)",
+        "price": 750, "pd": "750đ`", "stock": 0, "accounts": [],
         "sold": 0,
         "note": "",
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
@@ -1970,6 +1977,64 @@ async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
+# ════════════════════════════════════════════════════
+#          SLASH COMMANDS MỚI (hiển thị gợi ý)
+# ════════════════════════════════════════════════════
+
+async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mở menu chính"""
+    user = update.effective_user
+    await update.message.reply_text(
+        f"👋 Xin chào <b>{user.first_name}</b>!\n\n"
+        "📌 Chọn chức năng từ menu bên dưới:",
+        parse_mode="HTML",
+        reply_markup=main_menu_keyboard()
+    )
+
+async def cmd_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Hiện danh sách sản phẩm"""
+    await show_products(update, context)
+
+async def cmd_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mở ví điện tử"""
+    user = update.effective_user
+    db = load_db()
+    u  = get_user(db, user.id)
+    await update.message.reply_text(
+        f"👛 <b>Ví của bạn</b>\n\n"
+        f"💰 Số dư: <b>{u['balance']:,}đ</b>",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("💰 Nạp tiền ngay", callback_data="topup_wallet")]
+        ])
+    )
+
+async def cmd_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mở hỗ trợ khách hàng"""
+    await update.message.reply_text(
+        f"💬 <b>Hỗ trợ khách hàng</b>\n\n"
+        f"Liên hệ: {SUPPORT}\n"
+        f"Thời gian: 8:00 – 22:00 hàng ngày.",
+        parse_mode="HTML"
+    )
+
+async def cmd_api(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Hướng dẫn sử dụng API"""
+    await update.message.reply_text(
+        "🔌 <b>Hướng dẫn API Roboneo</b>\n\n"
+        "<b>── Webhook PayOS ──</b>\n"
+        f"<code>POST {SERVER_URL}/payos-webhook</code>\n\n"
+        "<b>── Trang xác nhận ──</b>\n"
+        f"• Mua hàng: <code>{SERVER_URL}/payment-success</code>\n"
+        f"• Nạp ví:   <code>{SERVER_URL}/topup-success</code>\n\n"
+        "<b>── Cách tích hợp ──</b>\n"
+        "1. Cấu hình PayOS trỏ webhook về địa chỉ trên\n"
+        "2. Đảm bảo <code>PAYOS_CHECKSUM</code> khớp với dashboard PayOS\n"
+        "3. Bot tự động xử lý thanh toán và giao hàng\n\n"
+        "<i>Liên hệ admin để biết thêm chi tiết.</i>",
+        parse_mode="HTML"
+    )
+
 def main():
     global telegram_app, bot_loop
 
@@ -1994,6 +2059,13 @@ def main():
     telegram_app.add_handler(CommandHandler("ghichu",      cmd_ghichu))
     telegram_app.add_handler(CommandHandler("suasp",       cmd_suasp))
 
+    # ← MỚI: slash commands hiển thị gợi ý cho user
+    telegram_app.add_handler(CommandHandler("menu",        cmd_menu))
+    telegram_app.add_handler(CommandHandler("products",    cmd_products))
+    telegram_app.add_handler(CommandHandler("wallet",      cmd_wallet))
+    telegram_app.add_handler(CommandHandler("support",     cmd_support))
+    telegram_app.add_handler(CommandHandler("api",         cmd_api))
+
     telegram_app.add_handler(MessageHandler(filters.Document.TXT, cmd_addacc_file))
     telegram_app.add_handler(CallbackQueryHandler(callback_handler))
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
@@ -2004,6 +2076,20 @@ def main():
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     logger.info("✅ Flask đang chạy trên port 8080")
+
+    # ← MỚI: Đăng ký slash commands với Telegram (hiện gợi ý khi gõ /)
+    async def post_init(app):
+        await app.bot.set_my_commands([
+            BotCommand("start",    "Bắt đầu và xem menu"),
+            BotCommand("menu",     "Open the main menu"),
+            BotCommand("products", "Show products"),
+            BotCommand("wallet",   "Open wallet"),
+            BotCommand("support",  "Open support"),
+            BotCommand("api",      "Show API guide"),
+        ])
+        logger.info("✅ Đã đăng ký Bot Commands với Telegram")
+
+    telegram_app.post_init = post_init
 
     logger.info("✅ Roboneo Bot đang chạy...")
     telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
