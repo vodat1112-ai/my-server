@@ -61,7 +61,7 @@ DEFAULT_PRODUCTS = {
     },
     "sp2": {
         "name": "Fotor AI 150+ Credits",
-        "price": 6500, "pd": "6k5", "stock": 0, "accounts": [],
+        "price": 5000, "pd": "5k", "stock": 0, "accounts": [],
         "sold": 0,
         "note": "",
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
@@ -83,13 +83,6 @@ DEFAULT_PRODUCTS = {
     "sp5": {
         "name": "Capcut Pro Team 35Day (BHF)",
         "price": 19000, "pd": "19K", "stock": 0, "accounts": [],
-        "sold": 0,
-        "note": "",
-        "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
-    },
-    "sp6": {
-        "name": "Kling AI 66 Credits (KBH)",
-        "price": 750, "pd": "750đ`", "stock": 0, "accounts": [],
         "sold": 0,
         "note": "",
         "msg": "🛒 <b>Xác nhận đơn hàng</b>\n\n📦 Sản phẩm: <b>{name}</b>\n💰 Giá: <b>{price}</b>/tài khoản\n📊 Còn lại: <b>{stock} tài khoản</b>\n\n✏️ Nhập số lượng cần mua (tối đa {stock}):"
@@ -1983,13 +1976,7 @@ async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Mở menu chính"""
-    user = update.effective_user
-    await update.message.reply_text(
-        f"👋 Xin chào <b>{user.first_name}</b>!\n\n"
-        "📌 Chọn chức năng từ menu bên dưới:",
-        parse_mode="HTML",
-        reply_markup=main_menu_keyboard()
-    )
+    await show_products(update, context)
 
 async def cmd_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Hiện danh sách sản phẩm"""
@@ -2018,22 +2005,7 @@ async def cmd_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-async def cmd_api(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Hướng dẫn sử dụng API"""
-    await update.message.reply_text(
-        "🔌 <b>Hướng dẫn API Roboneo</b>\n\n"
-        "<b>── Webhook PayOS ──</b>\n"
-        f"<code>POST {SERVER_URL}/payos-webhook</code>\n\n"
-        "<b>── Trang xác nhận ──</b>\n"
-        f"• Mua hàng: <code>{SERVER_URL}/payment-success</code>\n"
-        f"• Nạp ví:   <code>{SERVER_URL}/topup-success</code>\n\n"
-        "<b>── Cách tích hợp ──</b>\n"
-        "1. Cấu hình PayOS trỏ webhook về địa chỉ trên\n"
-        "2. Đảm bảo <code>PAYOS_CHECKSUM</code> khớp với dashboard PayOS\n"
-        "3. Bot tự động xử lý thanh toán và giao hàng\n\n"
-        "<i>Liên hệ admin để biết thêm chi tiết.</i>",
-        parse_mode="HTML"
-    )
+
 
 def main():
     global telegram_app, bot_loop
@@ -2064,7 +2036,7 @@ def main():
     telegram_app.add_handler(CommandHandler("products",    cmd_products))
     telegram_app.add_handler(CommandHandler("wallet",      cmd_wallet))
     telegram_app.add_handler(CommandHandler("support",     cmd_support))
-    telegram_app.add_handler(CommandHandler("api",         cmd_api))
+
 
     telegram_app.add_handler(MessageHandler(filters.Document.TXT, cmd_addacc_file))
     telegram_app.add_handler(CallbackQueryHandler(callback_handler))
@@ -2085,7 +2057,7 @@ def main():
             BotCommand("products", "Show products"),
             BotCommand("wallet",   "Open wallet"),
             BotCommand("support",  "Open support"),
-            BotCommand("api",      "Show API guide"),
+
         ])
         logger.info("✅ Đã đăng ký Bot Commands với Telegram")
 
